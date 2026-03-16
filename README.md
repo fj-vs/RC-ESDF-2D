@@ -37,6 +37,40 @@
 
 ---
 
+
+## 🧭 新增：全局 ESDF + B 样条优化路径规划
+
+本仓库已新增一个全局地图版本的 ESDF 与优化式路径规划模块：
+
+- `GlobalEsdfMap`：在世界坐标系下维护占据栅格并构建 ESDF，可查询任意点的距离与梯度。
+- `BsplineEsdfPlanner`：基于三次 B 样条控制点做梯度下降优化，代价包含：
+  - 平滑项（二阶差分）
+  - 路径长度项
+  - ESDF 安全距离约束项（通过 `safe_distance - dist` 的惩罚，并用 ESDF 梯度反向传播到控制点）
+
+你可以直接参考 `main.cpp` 中的示例：
+1. 构建全局障碍地图；
+2. 生成全局 ESDF；
+3. 输入起终点进行 B 样条轨迹优化；
+4. 检查优化后轨迹最小 ESDF 距离。
+
+
+## 🤖 ROS 实时规划节点（新增）
+
+`main.cpp` 已改为 ROS 节点 `esdf_bspline_planner_node`，工作流程如下：
+
+- 订阅 `/robot_pose` (`geometry_msgs/Pose2D`) 作为机器人当前位姿。
+- 订阅 `/scan` (`sensor_msgs/LaserScan`) 将激光点投影到世界坐标并更新全局占据栅格，再重建 ESDF。
+- 订阅 RViz 2D Nav Goal 话题 `/move_base_simple/goal` (`geometry_msgs/PoseStamped`) 作为规划目标。
+- 以机器人当前位置到目标点进行 B 样条优化，代价同时考虑：
+  - 平滑项
+  - 路径长度项
+  - ESDF 安全距离项（利用 ESDF 梯度）
+  - 差速车曲率约束项（`max_curvature`）
+- 发布 `/planned_path` (`nav_msgs/Path`) 到 RViz 可视化。
+
+默认参数可通过 ROS 参数服务器设置：`safe_distance`、`max_curvature`、`num_control_points`、`max_iterations`、`w_obstacle` 等。
+
 ## 🚀 快速开始 (Quick Start)
 
 ### 依赖 (Dependencies)
