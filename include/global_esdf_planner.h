@@ -51,7 +51,8 @@ public:
         double w_kinematic{2.5};
     };
 
-    explicit BsplineEsdfPlanner(const Config& cfg = Config()) : cfg_(cfg) {}
+    BsplineEsdfPlanner();
+    explicit BsplineEsdfPlanner(const Config& cfg);
 
     std::vector<Eigen::Vector2d> plan(
         const Eigen::Vector2d& start,

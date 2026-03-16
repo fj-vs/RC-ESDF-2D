@@ -4,6 +4,11 @@
 #include <cmath>
 #include <limits>
 
+BsplineEsdfPlanner::BsplineEsdfPlanner() : cfg_(Config{}) {}
+
+BsplineEsdfPlanner::BsplineEsdfPlanner(const Config& cfg) : cfg_(cfg) {}
+
+
 void GlobalEsdfMap::initialize(double width_m, double height_m, double resolution, const Eigen::Vector2d& origin) {
     width_m_ = width_m;
     height_m_ = height_m;
