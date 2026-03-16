@@ -26,6 +26,7 @@
   <exec_depend>sensor_msgs</exec_depend>
   <exec_depend>nav_msgs</exec_depend>
   <exec_depend>tf2</exec_depend>
+  <exec_depend>rviz</exec_depend>
 
   <export/>
 </package>

@@ -46,3 +46,13 @@ target_link_libraries(esdf_bspline_planner_node
   esdf_global_planner
   ${catkin_LIBRARIES}
 )
+
+install(TARGETS esdf_global_planner esdf_bspline_planner_node
+  ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
+  LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
+  RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
+)
+
+install(DIRECTORY launch rviz
+  DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}
+)

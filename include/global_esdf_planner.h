@@ -12,6 +12,12 @@ public:
     void buildEsdf();
     bool query(const Eigen::Vector2d& pos_world, double& dist, Eigen::Vector2d& grad) const;
 
+    int sizeX() const { return size_x_; }
+    int sizeY() const { return size_y_; }
+    double resolution() const { return resolution_; }
+    const Eigen::Vector2d& origin() const { return origin_; }
+    const std::vector<float>& esdfData() const { return esdf_; }
+
 private:
     inline int index(int x, int y) const { return y * size_x_ + x; }
     inline bool inRange(int x, int y) const { return x >= 0 && x < size_x_ && y >= 0 && y < size_y_; }

@@ -73,6 +73,25 @@
 
 ## 🚀 快速开始 (Quick Start)
 
+
+### RViz 可视化与启动
+
+新增 `launch/esdf_planner.launch`，可一键启动规划节点与 RViz 配置。
+
+```bash
+roslaunch rc_esdf_global_planner esdf_planner.launch
+```
+
+默认可视化话题（均可在 launch 中改）：
+- `/esdf_map` (`nav_msgs/OccupancyGrid`)：ESDF 栅格可视化（障碍区域高亮）。
+- `/robot_pose_vis` (`geometry_msgs/PoseStamped`)：机器人位姿。
+- `/planned_path_raw` (`nav_msgs/Path`)：优化前路径（起终点直线初始化）。
+- `/planned_path_opt` (`nav_msgs/Path`)：优化后路径。
+
+当前已把地图参数、规划参数、输入输出话题、`frame_id`、`max_vis_dist`、`publish_opt_path_when_collision` 全部提取到 `launch/esdf_planner.launch`。
+
+RViz 工具栏中的 `2D Nav Goal` 会向 `/move_base_simple/goal` 发布目标点（可通过 launch 参数 `goal_topic` 改）。
+
 ### 依赖 (Dependencies)
 *   [Eigen3](http://eigen.tuxfamily.org/) (核心计算)
 *   [OpenCV](https://opencv.org/) (可选，仅用于可视化调试)
