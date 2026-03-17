@@ -1,0 +1,76 @@
+<launch>
+  <arg name="use_rviz" default="true"/>
+  <arg name="rviz_config" default="$(find rc_esdf_global_planner)/rviz/esdf_planner.rviz"/>
+
+  <arg name="frame_id" default="map"/>
+
+  <arg name="robot_pose_topic" default="/robot_pose"/>
+  <arg name="scan_topic" default="/scan"/>
+  <arg name="goal_topic" default="/move_base_simple/goal"/>
+
+  <arg name="esdf_map_topic" default="/esdf_map"/>
+  <arg name="robot_pose_vis_topic" default="/robot_pose_vis"/>
+  <arg name="planned_path_raw_topic" default="/planned_path_raw"/>
+  <arg name="planned_path_opt_topic" default="/planned_path_opt"/>
+
+  <arg name="map_width" default="40.0"/>
+  <arg name="map_height" default="40.0"/>
+  <arg name="resolution" default="0.1"/>
+  <arg name="origin_x" default="-20.0"/>
+  <arg name="origin_y" default="-20.0"/>
+  <arg name="max_vis_dist" default="3.0"/>
+
+  <arg name="search_safe_distance" default="0.25"/>
+  <arg name="allow_diagonal" default="true"/>
+
+  <arg name="safe_distance" default="0.35"/>
+  <arg name="max_curvature" default="0.5"/>
+  <arg name="num_control_points" default="10"/>
+  <arg name="sample_per_segment" default="16"/>
+  <arg name="max_iterations" default="220"/>
+  <arg name="step_size" default="0.03"/>
+  <arg name="w_smooth" default="1.5"/>
+  <arg name="w_obstacle" default="12.0"/>
+  <arg name="w_length" default="0.12"/>
+  <arg name="w_kinematic" default="2.5"/>
+  <arg name="w_ref" default="0.6"/>
+  <arg name="publish_opt_path_when_collision" default="true"/>
+
+  <node pkg="rc_esdf_global_planner" type="esdf_bspline_planner_node" name="esdf_bspline_planner_node" output="screen">
+    <param name="frame_id" value="$(arg frame_id)"/>
+
+    <param name="robot_pose_topic" value="$(arg robot_pose_topic)"/>
+    <param name="scan_topic" value="$(arg scan_topic)"/>
+    <param name="goal_topic" value="$(arg goal_topic)"/>
+
+    <param name="esdf_map_topic" value="$(arg esdf_map_topic)"/>
+    <param name="robot_pose_vis_topic" value="$(arg robot_pose_vis_topic)"/>
+    <param name="planned_path_raw_topic" value="$(arg planned_path_raw_topic)"/>
+    <param name="planned_path_opt_topic" value="$(arg planned_path_opt_topic)"/>
+
+    <param name="map_width" value="$(arg map_width)"/>
+    <param name="map_height" value="$(arg map_height)"/>
+    <param name="resolution" value="$(arg resolution)"/>
+    <param name="origin_x" value="$(arg origin_x)"/>
+    <param name="origin_y" value="$(arg origin_y)"/>
+    <param name="max_vis_dist" value="$(arg max_vis_dist)"/>
+
+    <param name="search_safe_distance" value="$(arg search_safe_distance)"/>
+    <param name="allow_diagonal" value="$(arg allow_diagonal)"/>
+
+    <param name="safe_distance" value="$(arg safe_distance)"/>
+    <param name="max_curvature" value="$(arg max_curvature)"/>
+    <param name="num_control_points" value="$(arg num_control_points)"/>
+    <param name="sample_per_segment" value="$(arg sample_per_segment)"/>
+    <param name="max_iterations" value="$(arg max_iterations)"/>
+    <param name="step_size" value="$(arg step_size)"/>
+    <param name="w_smooth" value="$(arg w_smooth)"/>
+    <param name="w_obstacle" value="$(arg w_obstacle)"/>
+    <param name="w_length" value="$(arg w_length)"/>
+    <param name="w_kinematic" value="$(arg w_kinematic)"/>
+    <param name="w_ref" value="$(arg w_ref)"/>
+    <param name="publish_opt_path_when_collision" value="$(arg publish_opt_path_when_collision)"/>
+  </node>
+
+  <node if="$(arg use_rviz)" pkg="rviz" type="rviz" name="rviz" args="-d $(arg rviz_config)"/>
+</launch>
