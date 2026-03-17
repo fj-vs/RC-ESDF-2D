@@ -38,19 +38,23 @@ public:
         nh_.param("max_vis_dist", max_vis_dist_, 3.0);
         nh_.param("publish_opt_path_when_collision", publish_opt_path_when_collision_, true);
 
-        BsplineEsdfPlanner::Config cfg;
-        nh_.param("safe_distance", cfg.safe_distance, cfg.safe_distance);
-        nh_.param("max_curvature", cfg.max_curvature, cfg.max_curvature);
-        nh_.param("num_control_points", cfg.num_control_points, cfg.num_control_points);
-        nh_.param("sample_per_segment", cfg.sample_per_segment, cfg.sample_per_segment);
-        nh_.param("max_iterations", cfg.max_iterations, cfg.max_iterations);
-        nh_.param("step_size", cfg.step_size, cfg.step_size);
-        nh_.param("w_smooth", cfg.w_smooth, cfg.w_smooth);
-        nh_.param("w_obstacle", cfg.w_obstacle, cfg.w_obstacle);
-        nh_.param("w_length", cfg.w_length, cfg.w_length);
-        nh_.param("w_kinematic", cfg.w_kinematic, cfg.w_kinematic);
+        DdrEsdfPlanner::Config cfg;
+        nh_.param("search_safe_distance", cfg.search_safe_distance, cfg.search_safe_distance);
+        nh_.param("allow_diagonal", cfg.allow_diagonal, cfg.allow_diagonal);
 
-        planner_ = BsplineEsdfPlanner(cfg);
+        nh_.param("safe_distance", cfg.backend_cfg.safe_distance, cfg.backend_cfg.safe_distance);
+        nh_.param("max_curvature", cfg.backend_cfg.max_curvature, cfg.backend_cfg.max_curvature);
+        nh_.param("num_control_points", cfg.backend_cfg.num_control_points, cfg.backend_cfg.num_control_points);
+        nh_.param("sample_per_segment", cfg.backend_cfg.sample_per_segment, cfg.backend_cfg.sample_per_segment);
+        nh_.param("max_iterations", cfg.backend_cfg.max_iterations, cfg.backend_cfg.max_iterations);
+        nh_.param("step_size", cfg.backend_cfg.step_size, cfg.backend_cfg.step_size);
+        nh_.param("w_smooth", cfg.backend_cfg.w_smooth, cfg.backend_cfg.w_smooth);
+        nh_.param("w_obstacle", cfg.backend_cfg.w_obstacle, cfg.backend_cfg.w_obstacle);
+        nh_.param("w_length", cfg.backend_cfg.w_length, cfg.backend_cfg.w_length);
+        nh_.param("w_kinematic", cfg.backend_cfg.w_kinematic, cfg.backend_cfg.w_kinematic);
+        nh_.param("w_ref", cfg.backend_cfg.w_ref, cfg.backend_cfg.w_ref);
+
+        planner_ = DdrEsdfPlanner(cfg);
         global_map_.initialize(map_width, map_height, resolution, Eigen::Vector2d(origin_x, origin_y));
 
         pose_sub_ = nh_.subscribe(robot_pose_topic_, 1, &EsdfPlannerNode::poseCallback, this);
@@ -134,16 +138,6 @@ private:
         return path;
     }
 
-    std::vector<Eigen::Vector2d> buildRawPath(const Eigen::Vector2d& start, const Eigen::Vector2d& goal, size_t n) const {
-        const size_t count = std::max<size_t>(n, 2);
-        std::vector<Eigen::Vector2d> path(count);
-        for (size_t i = 0; i < count; ++i) {
-            const double t = static_cast<double>(i) / static_cast<double>(count - 1);
-            path[i] = (1.0 - t) * start + t * goal;
-        }
-        return path;
-    }
-
     void poseCallback(const geometry_msgs::Pose2D::ConstPtr& msg) {
         robot_pose_ = *msg;
         has_pose_ = true;
@@ -186,11 +180,10 @@ private:
         if (!has_pose_ || !has_goal_) return;
 
         const Eigen::Vector2d start(robot_pose_.x, robot_pose_.y);
+        std::vector<Eigen::Vector2d> raw_path;
         std::vector<Eigen::Vector2d> opt_path;
-        planner_.plan(start, goal_, global_map_, &opt_path);
+        if (!planner_.plan(start, goal_, global_map_, raw_path, opt_path)) return;
         if (opt_path.size() < 2) return;
-
-        const std::vector<Eigen::Vector2d> raw_path = buildRawPath(start, goal_, opt_path.size());
 
         double min_dist = 1e6;
         for (const auto& pt : opt_path) {
@@ -225,7 +218,7 @@ private:
     ros::Publisher pose_vis_pub_;
 
     GlobalEsdfMap global_map_;
-    BsplineEsdfPlanner planner_;
+    DdrEsdfPlanner planner_;
 
     geometry_msgs::Pose2D robot_pose_;
     Eigen::Vector2d goal_{0.0, 0.0};

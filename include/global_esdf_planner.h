@@ -55,12 +55,20 @@ public:
         double w_obstacle{12.0};
         double w_length{0.12};
         double w_kinematic{2.5};
+        double w_ref{0.6};
     };
 
     BsplineEsdfPlanner();
     explicit BsplineEsdfPlanner(const Config& cfg);
 
     std::vector<Eigen::Vector2d> plan(
+        const Eigen::Vector2d& start,
+        const Eigen::Vector2d& goal,
+        const GlobalEsdfMap& map,
+        std::vector<Eigen::Vector2d>* sampled_path = nullptr) const;
+
+    std::vector<Eigen::Vector2d> planFromReference(
+        const std::vector<Eigen::Vector2d>& reference_path,
         const Eigen::Vector2d& start,
         const Eigen::Vector2d& goal,
         const GlobalEsdfMap& map,
@@ -75,8 +83,44 @@ private:
     KnotSpan makeClampedUniformKnots(int num_ctrl, int degree) const;
     std::vector<double> basisAt(double u, int num_ctrl, int degree, const std::vector<double>& knots) const;
     Eigen::Vector2d evaluate(const std::vector<Eigen::Vector2d>& ctrl_pts, const std::vector<double>& basis) const;
+    std::vector<Eigen::Vector2d> optimize(
+        const std::vector<Eigen::Vector2d>& init_ctrl_pts,
+        const std::vector<Eigen::Vector2d>* reference_path,
+        const Eigen::Vector2d& start,
+        const Eigen::Vector2d& goal,
+        const GlobalEsdfMap& map,
+        std::vector<Eigen::Vector2d>* sampled_path) const;
 
     Config cfg_;
+};
+
+class DdrEsdfPlanner {
+public:
+    struct Config {
+        double search_safe_distance{0.25};
+        bool allow_diagonal{true};
+        BsplineEsdfPlanner::Config backend_cfg{};
+    };
+
+    DdrEsdfPlanner();
+    explicit DdrEsdfPlanner(const Config& cfg);
+
+    bool plan(
+        const Eigen::Vector2d& start,
+        const Eigen::Vector2d& goal,
+        const GlobalEsdfMap& map,
+        std::vector<Eigen::Vector2d>& front_end_path,
+        std::vector<Eigen::Vector2d>& optimized_path) const;
+
+private:
+    bool frontEndAstar(
+        const Eigen::Vector2d& start,
+        const Eigen::Vector2d& goal,
+        const GlobalEsdfMap& map,
+        std::vector<Eigen::Vector2d>& path) const;
+
+    Config cfg_;
+    BsplineEsdfPlanner backend_;
 };
 
 #endif

@@ -20,6 +20,9 @@
   <arg name="origin_y" default="-20.0"/>
   <arg name="max_vis_dist" default="3.0"/>
 
+  <arg name="search_safe_distance" default="0.25"/>
+  <arg name="allow_diagonal" default="true"/>
+
   <arg name="safe_distance" default="0.35"/>
   <arg name="max_curvature" default="0.5"/>
   <arg name="num_control_points" default="10"/>
@@ -30,6 +33,7 @@
   <arg name="w_obstacle" default="12.0"/>
   <arg name="w_length" default="0.12"/>
   <arg name="w_kinematic" default="2.5"/>
+  <arg name="w_ref" default="0.6"/>
   <arg name="publish_opt_path_when_collision" default="true"/>
 
   <node pkg="rc_esdf_global_planner" type="esdf_bspline_planner_node" name="esdf_bspline_planner_node" output="screen">
@@ -51,6 +55,9 @@
     <param name="origin_y" value="$(arg origin_y)"/>
     <param name="max_vis_dist" value="$(arg max_vis_dist)"/>
 
+    <param name="search_safe_distance" value="$(arg search_safe_distance)"/>
+    <param name="allow_diagonal" value="$(arg allow_diagonal)"/>
+
     <param name="safe_distance" value="$(arg safe_distance)"/>
     <param name="max_curvature" value="$(arg max_curvature)"/>
     <param name="num_control_points" value="$(arg num_control_points)"/>
@@ -61,6 +68,7 @@
     <param name="w_obstacle" value="$(arg w_obstacle)"/>
     <param name="w_length" value="$(arg w_length)"/>
     <param name="w_kinematic" value="$(arg w_kinematic)"/>
+    <param name="w_ref" value="$(arg w_ref)"/>
     <param name="publish_opt_path_when_collision" value="$(arg publish_opt_path_when_collision)"/>
   </node>
 
