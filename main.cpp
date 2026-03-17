@@ -16,10 +16,13 @@
 class MpcController {
 public:
     struct Config {
-        double lookahead_dist{0.8};
+        int horizon_steps{12};
+        double dt{0.08};
         double max_linear_vel{0.8};
         double max_angular_vel{1.0};
-        double k_theta{1.5};
+        double w_pos{1.0};
+        double w_heading{0.4};
+        double w_input{0.05};
     };
 
     MpcController() : cfg_(Config{}) {}
@@ -33,29 +36,52 @@ public:
         goal_reached = false;
         if (path.empty()) return cmd;
 
-        const Eigen::Vector2d pos(robot_pose.x(), robot_pose.y());
         const Eigen::Vector2d goal = path.back();
-        if ((goal - pos).norm() < 0.2) {
+        if ((goal - robot_pose.head<2>()).norm() < 0.2) {
             goal_reached = true;
             return cmd;
         }
 
-        Eigen::Vector2d target = goal;
-        for (const auto& p : path) {
-            if ((p - pos).norm() >= cfg_.lookahead_dist) {
-                target = p;
-                break;
+        const int cand_num = 15;
+        double best_cost = 1e18;
+        double best_v = 0.0;
+        double best_w = 0.0;
+
+        for (int i = 0; i < cand_num; ++i) {
+            const double w = -cfg_.max_angular_vel + 2.0 * cfg_.max_angular_vel * i / (cand_num - 1);
+            const double v = cfg_.max_linear_vel;
+
+            Eigen::Vector3d x = robot_pose;
+            double cost = 0.0;
+            for (int k = 0; k < cfg_.horizon_steps; ++k) {
+                x.x() += v * std::cos(x.z()) * cfg_.dt;
+                x.y() += v * std::sin(x.z()) * cfg_.dt;
+                x.z() += w * cfg_.dt;
+
+                const size_t idx = std::min(path.size() - 1, static_cast<size_t>((k + 1) * path.size() / cfg_.horizon_steps));
+                const Eigen::Vector2d ref = path[idx];
+                const double dx = x.x() - ref.x();
+                const double dy = x.y() - ref.y();
+                const double pos_cost = dx * dx + dy * dy;
+
+                double ref_yaw = std::atan2(goal.y() - x.y(), goal.x() - x.x());
+                double dyaw = ref_yaw - x.z();
+                while (dyaw > M_PI) dyaw -= 2.0 * M_PI;
+                while (dyaw < -M_PI) dyaw += 2.0 * M_PI;
+
+                cost += cfg_.w_pos * pos_cost + cfg_.w_heading * dyaw * dyaw;
+            }
+            cost += cfg_.w_input * (v * v + w * w);
+
+            if (cost < best_cost) {
+                best_cost = cost;
+                best_v = v;
+                best_w = w;
             }
         }
 
-        const double desired = std::atan2(target.y() - pos.y(), target.x() - pos.x());
-        double err = desired - robot_pose.z();
-        while (err > M_PI) err -= 2.0 * M_PI;
-        while (err < -M_PI) err += 2.0 * M_PI;
-
-        const double dist = (target - pos).norm();
-        cmd.linear.x = std::min(cfg_.max_linear_vel, dist) * std::max(0.0, 1.0 - std::abs(err));
-        cmd.angular.z = std::max(-cfg_.max_angular_vel, std::min(cfg_.max_angular_vel, cfg_.k_theta * err));
+        cmd.linear.x = best_v;
+        cmd.angular.z = best_w;
         return cmd;
     }
 
@@ -107,10 +133,13 @@ public:
         nh_.param("w_ref", cfg.ms_cfg.w_ref, cfg.ms_cfg.w_ref);
 
         MpcController::Config mpc_cfg;
-        nh_.param("mpc_lookahead_dist", mpc_cfg.lookahead_dist, mpc_cfg.lookahead_dist);
+        nh_.param("mpc_horizon_steps", mpc_cfg.horizon_steps, mpc_cfg.horizon_steps);
+        nh_.param("mpc_dt", mpc_cfg.dt, mpc_cfg.dt);
         nh_.param("mpc_max_linear_vel", mpc_cfg.max_linear_vel, mpc_cfg.max_linear_vel);
         nh_.param("mpc_max_angular_vel", mpc_cfg.max_angular_vel, mpc_cfg.max_angular_vel);
-        nh_.param("mpc_k_theta", mpc_cfg.k_theta, mpc_cfg.k_theta);
+        nh_.param("mpc_w_pos", mpc_cfg.w_pos, mpc_cfg.w_pos);
+        nh_.param("mpc_w_heading", mpc_cfg.w_heading, mpc_cfg.w_heading);
+        nh_.param("mpc_w_input", mpc_cfg.w_input, mpc_cfg.w_input);
 
         planner_ = DdrEsdfPipelinePlanner(cfg);
         mpc_controller_ = MpcController(mpc_cfg);

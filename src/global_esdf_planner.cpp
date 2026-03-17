@@ -1,4 +1,5 @@
 #include "global_esdf_planner.h"
+#include "gcopter/minco.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -232,99 +233,75 @@ bool MSPlanner::plan(
     const Eigen::Vector2d& goal,
     const GlobalEsdfMap& map,
     std::vector<Eigen::Vector2d>& optimized_path) const {
-    const int degree = 3;
-    const int n = std::max(cfg_.num_control_points, degree + 2);
-
-    std::vector<Eigen::Vector2d> ctrl_pts(n, start);
-    if (reference_path.size() >= 2) {
-        for (int i = 0; i < n; ++i) {
-            const size_t idx = std::min(reference_path.size() - 1, static_cast<size_t>(i * reference_path.size() / n));
-            ctrl_pts[i] = reference_path[idx];
-        }
-    } else {
-        for (int i = 0; i < n; ++i) {
-            const double t = static_cast<double>(i) / (n - 1);
-            ctrl_pts[i] = (1.0 - t) * start + t * goal;
-        }
+    std::vector<Eigen::Vector2d> ref = reference_path;
+    if (ref.size() < 2) {
+        ref = {start, goal};
     }
-    ctrl_pts.front() = start;
-    ctrl_pts.back() = goal;
+    if ((ref.front() - start).norm() > 1e-6) ref.insert(ref.begin(), start);
+    if ((ref.back() - goal).norm() > 1e-6) ref.push_back(goal);
 
-    const auto knot = makeClampedUniformKnots(n, degree);
-    const int sample_count = std::max(16, knot.span * cfg_.sample_per_segment);
-    std::vector<std::vector<double>> sample_basis(sample_count);
-    for (int s = 0; s < sample_count; ++s) {
-        const double u = static_cast<double>(s) / (sample_count - 1);
-        sample_basis[s] = basisAt(u, n, degree, knot.knots);
+    int piece_num = static_cast<int>(std::min<size_t>(std::max<size_t>(2, ref.size() - 1), static_cast<size_t>(std::max(2, cfg_.num_control_points - 1))));
+    if (piece_num < 2) piece_num = 2;
+
+    std::vector<Eigen::Vector2d> sampled(piece_num + 1);
+    for (int i = 0; i <= piece_num; ++i) {
+        const size_t idx = std::min(ref.size() - 1, static_cast<size_t>(i * (ref.size() - 1) / piece_num));
+        sampled[i] = ref[idx];
+    }
+    sampled.front() = start;
+    sampled.back() = goal;
+
+    Eigen::Matrix<double, 2, 3> head, tail;
+    head.setZero();
+    tail.setZero();
+    head.col(0) = start;
+    tail.col(0) = goal;
+
+    const double init_theta = std::atan2(sampled[1].y() - sampled[0].y(), sampled[1].x() - sampled[0].x());
+    const double end_theta = std::atan2(sampled[piece_num].y() - sampled[piece_num - 1].y(), sampled[piece_num].x() - sampled[piece_num - 1].x());
+    head.col(1) = Eigen::Vector2d(std::cos(init_theta), std::sin(init_theta)) * 0.2;
+    tail.col(1) = Eigen::Vector2d(std::cos(end_theta), std::sin(end_theta)) * 0.2;
+
+    Eigen::MatrixXd inner_points(2, piece_num - 1);
+    for (int i = 0; i < piece_num - 1; ++i) inner_points.col(i) = sampled[i + 1];
+
+    Eigen::VectorXd piece_times(piece_num);
+    for (int i = 0; i < piece_num; ++i) {
+        const double seg_len = (sampled[i + 1] - sampled[i]).norm();
+        piece_times(i) = std::max(0.05, seg_len / std::max(0.1, cfg_.w_length * 5.0));
     }
 
-    for (int iter = 0; iter < cfg_.max_iterations; ++iter) {
-        std::vector<Eigen::Vector2d> grad_ctrl(n, Eigen::Vector2d::Zero());
+    minco::MINCO_S3NU minco;
+    minco.setConditions(head, tail, piece_num);
+    minco.setParameters(inner_points, piece_times);
+    Trajectory<5, 2> traj;
+    minco.getTrajectory(traj);
 
-        for (int i = 1; i + 1 < n; ++i) {
-            const Eigen::Vector2d a = ctrl_pts[i - 1] - 2.0 * ctrl_pts[i] + ctrl_pts[i + 1];
-            grad_ctrl[i - 1] += 2.0 * cfg_.w_smooth * a;
-            grad_ctrl[i] += -4.0 * cfg_.w_smooth * a;
-            grad_ctrl[i + 1] += 2.0 * cfg_.w_smooth * a;
-        }
-
-        for (int i = 0; i + 1 < n; ++i) {
-            const Eigen::Vector2d d = ctrl_pts[i + 1] - ctrl_pts[i];
-            grad_ctrl[i] += -2.0 * cfg_.w_length * d;
-            grad_ctrl[i + 1] += 2.0 * cfg_.w_length * d;
-        }
-
-        std::vector<Eigen::Vector2d> samples(sample_count, Eigen::Vector2d::Zero());
-        for (int s = 0; s < sample_count; ++s) samples[s] = evaluate(ctrl_pts, sample_basis[s]);
-
-        for (int s = 0; s < sample_count; ++s) {
-            double dist;
-            Eigen::Vector2d grad_dist;
-            if (!map.query(samples[s], dist, grad_dist)) continue;
-
-            const double violation = cfg_.safe_distance - dist;
-            if (violation > 0.0) {
-                const Eigen::Vector2d dcost_dp = -2.0 * cfg_.w_obstacle * violation * grad_dist;
-                for (int i = 0; i < n; ++i) grad_ctrl[i] += sample_basis[s][i] * dcost_dp;
-            }
-
-            if (!reference_path.empty()) {
-                const size_t ridx = std::min(reference_path.size() - 1, static_cast<size_t>(s * reference_path.size() / sample_count));
-                const Eigen::Vector2d dref = samples[s] - reference_path[ridx];
-                const Eigen::Vector2d dcost_dp_ref = 2.0 * cfg_.w_ref * dref;
-                for (int i = 0; i < n; ++i) grad_ctrl[i] += sample_basis[s][i] * dcost_dp_ref;
-            }
-        }
-
-        for (int s = 1; s + 1 < sample_count; ++s) {
-            const Eigen::Vector2d d1 = samples[s] - samples[s - 1];
-            const Eigen::Vector2d d2 = samples[s + 1] - samples[s];
-            const double n1 = d1.norm();
-            const double n2 = d2.norm();
-            if (n1 < 1e-3 || n2 < 1e-3) continue;
-
-            double cos_theta = d1.dot(d2) / (n1 * n2);
-            cos_theta = std::max(-1.0, std::min(1.0, cos_theta));
-            const double theta = std::acos(cos_theta);
-            const double ds = 0.5 * (n1 + n2);
-            const double kappa = theta / std::max(ds, 1e-3);
-            const double v = kappa - cfg_.max_curvature;
-            if (v <= 0.0) continue;
-
-            const Eigen::Vector2d dcost_dp = 2.0 * cfg_.w_kinematic * v * (2.0 * samples[s] - samples[s - 1] - samples[s + 1]);
-            for (int i = 0; i < n; ++i) grad_ctrl[i] += sample_basis[s][i] * dcost_dp;
-        }
-
-        for (int i = 1; i + 1 < n; ++i) ctrl_pts[i] -= cfg_.step_size * grad_ctrl[i];
-        ctrl_pts.front() = start;
-        ctrl_pts.back() = goal;
-    }
+    const double total_t = traj.getTotalDuration();
+    const int sample_n = std::max(20, piece_num * cfg_.sample_per_segment);
 
     optimized_path.clear();
-    optimized_path.reserve(sample_count);
-    for (int s = 0; s < sample_count; ++s) optimized_path.push_back(evaluate(ctrl_pts, sample_basis[s]));
+    optimized_path.reserve(sample_n);
+    for (int i = 0; i < sample_n; ++i) {
+        const double t = total_t * static_cast<double>(i) / static_cast<double>(sample_n - 1);
+        Eigen::Vector2d p = traj.getPos(t);
+
+        double dist;
+        Eigen::Vector2d grad;
+        if (map.query(p, dist, grad) && dist < cfg_.safe_distance) {
+            const double gn = grad.norm();
+            if (gn > 1e-6) p += (cfg_.safe_distance - dist) * (grad / gn) * 0.1;
+        }
+        optimized_path.push_back(p);
+    }
+
+    if (!optimized_path.empty()) {
+        optimized_path.front() = start;
+        optimized_path.back() = goal;
+    }
     return optimized_path.size() >= 2;
 }
+
 
 bool DdrEsdfPipelinePlanner::plan(
     const Eigen::Vector2d& start,

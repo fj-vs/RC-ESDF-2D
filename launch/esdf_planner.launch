@@ -39,10 +39,13 @@
   <arg name="w_ref" default="0.6"/>
 
   <!-- MPC controller -->
-  <arg name="mpc_lookahead_dist" default="0.8"/>
+  <arg name="mpc_horizon_steps" default="12"/>
+  <arg name="mpc_dt" default="0.08"/>
   <arg name="mpc_max_linear_vel" default="0.8"/>
   <arg name="mpc_max_angular_vel" default="1.0"/>
-  <arg name="mpc_k_theta" default="1.5"/>
+  <arg name="mpc_w_pos" default="1.0"/>
+  <arg name="mpc_w_heading" default="0.4"/>
+  <arg name="mpc_w_input" default="0.05"/>
 
   <arg name="publish_opt_path_when_collision" default="true"/>
 
@@ -81,10 +84,13 @@
     <param name="w_kinematic" value="$(arg w_kinematic)"/>
     <param name="w_ref" value="$(arg w_ref)"/>
 
-    <param name="mpc_lookahead_dist" value="$(arg mpc_lookahead_dist)"/>
+    <param name="mpc_horizon_steps" value="$(arg mpc_horizon_steps)"/>
+    <param name="mpc_dt" value="$(arg mpc_dt)"/>
     <param name="mpc_max_linear_vel" value="$(arg mpc_max_linear_vel)"/>
     <param name="mpc_max_angular_vel" value="$(arg mpc_max_angular_vel)"/>
-    <param name="mpc_k_theta" value="$(arg mpc_k_theta)"/>
+    <param name="mpc_w_pos" value="$(arg mpc_w_pos)"/>
+    <param name="mpc_w_heading" value="$(arg mpc_w_heading)"/>
+    <param name="mpc_w_input" value="$(arg mpc_w_input)"/>
 
     <param name="publish_opt_path_when_collision" value="$(arg publish_opt_path_when_collision)"/>
   </node>
