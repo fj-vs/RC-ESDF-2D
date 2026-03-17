@@ -1,0 +1,61 @@
+Panels:
+  - Class: rviz/Displays
+    Name: Displays
+  - Class: rviz/Views
+    Name: Views
+Visualization Manager:
+  Class: ""
+  Displays:
+    - Class: rviz/Grid
+      Enabled: true
+      Name: Grid
+      Plane: XY
+      Plane Cell Count: 40
+    - Class: rviz/Map
+      Enabled: true
+      Name: ESDF Map
+      Topic: /esdf_map
+      Alpha: 0.7
+      Color Scheme: map
+    - Class: rviz/Pose
+      Enabled: true
+      Name: Robot Pose
+      Topic: /robot_pose_vis
+      Shaft Length: 0.6
+      Head Length: 0.2
+      Color: 255; 255; 0
+    - Class: rviz/Path
+      Enabled: true
+      Name: Path Raw
+      Topic: /planned_path_raw
+      Color: 255; 0; 0
+      Line Style: Lines
+      Line Width: 0.05
+    - Class: rviz/Path
+      Enabled: true
+      Name: Path Optimized
+      Topic: /planned_path_opt
+      Color: 0; 255; 0
+      Line Style: Lines
+      Line Width: 0.08
+  Enabled: true
+  Global Options:
+    Background Color: 48; 48; 48
+    Fixed Frame: map
+  Name: root
+  Tools:
+    - Class: rviz/Interact
+    - Class: rviz/MoveCamera
+    - Class: rviz/Select
+    - Class: rviz/SetGoal
+      Topic: /move_base_simple/goal
+  Views:
+    Current:
+      Class: rviz/TopDownOrtho
+      Scale: 30
+      Angle: 0
+      X: 0
+      Y: 0
+Window Geometry:
+  Height: 900
+  Width: 1500
