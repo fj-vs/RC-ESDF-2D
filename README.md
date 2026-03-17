@@ -46,7 +46,7 @@
 - 新增 DDR-opt 风格前后端 + 控制链路：
   - 前端：`JPSPlanner`（当前实现为栅格最短路搜索接口）输出无碰撞离散路径（`planned_path_raw`）
   - 后端：`MSPlanner`（MINCO-S3 + L-BFGS）以参考路径内点与分段时间为优化变量，使用 L-BFGS 优化轨迹参数，再结合 ESDF 约束输出连续路径（`planned_path_opt`）
-  - 控制：`MpcController`（有限时域离散采样 MPC）发布 `cmd_vel`（`geometry_msgs::Twist`）
+  - 控制：`NmpcController`（基于 MINCO 优化轨迹参考的线性化 MPC，使用 OSQP-Eigen 求解 QP）发布 `cmd_vel`（`geometry_msgs::Twist`）
 
 - `GlobalEsdfMap`：在世界坐标系下维护占据栅格并构建 ESDF，可查询任意点的距离与梯度。
 - `BsplineEsdfPlanner`：基于三次 B 样条控制点做梯度下降优化，代价包含：
@@ -96,13 +96,14 @@ roslaunch rc_esdf_global_planner esdf_planner.launch
 - `/cmd_vel` (`geometry_msgs/Twist`)：MPC 控制器输出控制指令。
 
 当前已把地图参数、规划参数、输入输出话题、`frame_id`、`max_vis_dist`、`publish_opt_path_when_collision` 全部提取到 `launch/esdf_planner.launch`。
-新增可调参数：`search_safe_distance`、`allow_diagonal`（前端 JPS）、`max_lbfgs_iterations`、`w_obstacle`、`w_ref`（后端 MS L-BFGS + MINCO）以及 `mpc_lookahead_dist`、`mpc_max_linear_vel`、`mpc_max_angular_vel`、`mpc_dt`、`mpc_horizon`、`mpc_w_track`、`mpc_w_heading`、`mpc_w_control`（NMPC 控制输出）。
+新增可调参数：`search_safe_distance`、`allow_diagonal`（前端 JPS）、`max_lbfgs_iterations`、`w_obstacle`、`w_ref`（后端 MS L-BFGS + MINCO）以及 `mpc_goal_tolerance`、`mpc_allow_reverse`、`mpc_max_linear_vel`、`mpc_max_angular_vel`、`mpc_dt`、`mpc_horizon`、`mpc_w_x`、`mpc_w_y`、`mpc_w_yaw`、`mpc_w_v`、`mpc_w_w`、`mpc_w_du`（MPC QP 权重与约束）。
 
 RViz 工具栏中的 `2D Nav Goal` 会向 `/move_base_simple/goal` 发布目标点（可通过 launch 参数 `goal_topic` 改）。
 
 ### 依赖 (Dependencies)
 *   [Eigen3](http://eigen.tuxfamily.org/) (核心计算)
 *   [OpenCV](https://opencv.org/) (可选，仅用于可视化调试)
+*   [OsqpEigen](https://github.com/robotology/osqp-eigen) (MPC QP 求解)
 *   CMake (>= 3.10)
 
 ### 编译与运行 (Build)

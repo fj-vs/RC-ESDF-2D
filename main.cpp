@@ -46,19 +46,18 @@ public:
         nh_.param("ms_verbose", cfg.ms_cfg.verbose, cfg.ms_cfg.verbose);
 
         NmpcController::Config mpc_cfg;
-        nh_.param("mpc_lookahead_dist", mpc_cfg.lookahead_dist, mpc_cfg.lookahead_dist);
         nh_.param("mpc_goal_tolerance", mpc_cfg.goal_tolerance, mpc_cfg.goal_tolerance);
         nh_.param("mpc_allow_reverse", mpc_cfg.allow_reverse, mpc_cfg.allow_reverse);
         nh_.param("mpc_max_linear_vel", mpc_cfg.max_linear_vel, mpc_cfg.max_linear_vel);
         nh_.param("mpc_max_angular_vel", mpc_cfg.max_angular_vel, mpc_cfg.max_angular_vel);
         nh_.param("mpc_dt", mpc_cfg.dt, mpc_cfg.dt);
         nh_.param("mpc_horizon", mpc_cfg.horizon, mpc_cfg.horizon);
-        nh_.param("mpc_linear_samples", mpc_cfg.linear_samples, mpc_cfg.linear_samples);
-        nh_.param("mpc_angular_samples", mpc_cfg.angular_samples, mpc_cfg.angular_samples);
-        nh_.param("mpc_w_track", mpc_cfg.w_track, mpc_cfg.w_track);
-        nh_.param("mpc_w_heading", mpc_cfg.w_heading, mpc_cfg.w_heading);
-        nh_.param("mpc_w_control", mpc_cfg.w_control, mpc_cfg.w_control);
-        nh_.param("mpc_w_terminal", mpc_cfg.w_terminal, mpc_cfg.w_terminal);
+        nh_.param("mpc_w_x", mpc_cfg.w_x, mpc_cfg.w_x);
+        nh_.param("mpc_w_y", mpc_cfg.w_y, mpc_cfg.w_y);
+        nh_.param("mpc_w_yaw", mpc_cfg.w_yaw, mpc_cfg.w_yaw);
+        nh_.param("mpc_w_v", mpc_cfg.w_v, mpc_cfg.w_v);
+        nh_.param("mpc_w_w", mpc_cfg.w_w, mpc_cfg.w_w);
+        nh_.param("mpc_w_du", mpc_cfg.w_du, mpc_cfg.w_du);
 
         planner_ = DdrEsdfPipelinePlanner(cfg);
         nmpc_controller_ = NmpcController(mpc_cfg);

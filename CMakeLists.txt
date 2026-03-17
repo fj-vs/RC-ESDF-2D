@@ -14,6 +14,7 @@ find_package(catkin REQUIRED COMPONENTS
 )
 
 find_path(EIGEN3_INCLUDE_DIR Eigen/Core PATHS /usr/include/eigen3 /usr/local/include/eigen3)
+find_package(OsqpEigen REQUIRED)
 if(NOT EIGEN3_INCLUDE_DIR)
   message(FATAL_ERROR "Eigen headers not found (expected Eigen/Core).")
 endif()
@@ -22,6 +23,7 @@ catkin_package(
   INCLUDE_DIRS include
   LIBRARIES esdf_global_planner
   CATKIN_DEPENDS roscpp geometry_msgs sensor_msgs nav_msgs tf2
+  DEPENDS OsqpEigen
 )
 
 include_directories(
@@ -37,6 +39,7 @@ add_library(esdf_global_planner
 
 target_link_libraries(esdf_global_planner
   ${catkin_LIBRARIES}
+  OsqpEigen::OsqpEigen
 )
 
 add_executable(esdf_bspline_planner_node

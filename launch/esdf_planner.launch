@@ -35,14 +35,18 @@
   <arg name="w_ref" default="0.6"/>
 
   <!-- MPC controller -->
-  <arg name="mpc_lookahead_dist" default="0.8"/>
+  <arg name="mpc_goal_tolerance" default="0.2"/>
+  <arg name="mpc_allow_reverse" default="false"/>
   <arg name="mpc_max_linear_vel" default="0.8"/>
   <arg name="mpc_max_angular_vel" default="1.0"/>
   <arg name="mpc_dt" default="0.1"/>
   <arg name="mpc_horizon" default="12"/>
-  <arg name="mpc_w_track" default="2.0"/>
-  <arg name="mpc_w_heading" default="0.8"/>
-  <arg name="mpc_w_control" default="0.1"/>
+  <arg name="mpc_w_x" default="12.0"/>
+  <arg name="mpc_w_y" default="12.0"/>
+  <arg name="mpc_w_yaw" default="2.0"/>
+  <arg name="mpc_w_v" default="0.2"/>
+  <arg name="mpc_w_w" default="0.2"/>
+  <arg name="mpc_w_du" default="0.05"/>
 
   <arg name="publish_opt_path_when_collision" default="true"/>
 
@@ -77,14 +81,18 @@
     <param name="w_obstacle" value="$(arg w_obstacle)"/>
     <param name="w_ref" value="$(arg w_ref)"/>
 
-    <param name="mpc_lookahead_dist" value="$(arg mpc_lookahead_dist)"/>
+    <param name="mpc_goal_tolerance" value="$(arg mpc_goal_tolerance)"/>
+    <param name="mpc_allow_reverse" value="$(arg mpc_allow_reverse)"/>
     <param name="mpc_max_linear_vel" value="$(arg mpc_max_linear_vel)"/>
     <param name="mpc_max_angular_vel" value="$(arg mpc_max_angular_vel)"/>
     <param name="mpc_dt" value="$(arg mpc_dt)"/>
     <param name="mpc_horizon" value="$(arg mpc_horizon)"/>
-    <param name="mpc_w_track" value="$(arg mpc_w_track)"/>
-    <param name="mpc_w_heading" value="$(arg mpc_w_heading)"/>
-    <param name="mpc_w_control" value="$(arg mpc_w_control)"/>
+    <param name="mpc_w_x" value="$(arg mpc_w_x)"/>
+    <param name="mpc_w_y" value="$(arg mpc_w_y)"/>
+    <param name="mpc_w_yaw" value="$(arg mpc_w_yaw)"/>
+    <param name="mpc_w_v" value="$(arg mpc_w_v)"/>
+    <param name="mpc_w_w" value="$(arg mpc_w_w)"/>
+    <param name="mpc_w_du" value="$(arg mpc_w_du)"/>
 
     <param name="publish_opt_path_when_collision" value="$(arg publish_opt_path_when_collision)"/>
   </node>
