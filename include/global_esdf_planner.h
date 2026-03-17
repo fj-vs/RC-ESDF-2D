@@ -72,6 +72,7 @@ public:
         double w_length{0.12};
         double w_kinematic{2.5};
         double w_ref{0.6};
+        bool verbose{false};
     };
 
     MSPlanner();

@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <iostream>
 #include <queue>
 
 JPSPlanner::JPSPlanner() : cfg_(Config{}) {}
@@ -191,11 +192,40 @@ struct MsLbfgsCtx {
     Eigen::Vector2d goal{0, 0};
     MSPlanner::Config cfg;
     int piece_num{0};
+    int eval_count{0};
+    double last_cost{0.0};
 };
+
+static std::vector<Eigen::Vector2d> fallbackPath(const std::vector<Eigen::Vector2d>& reference_path,
+                                                const Eigen::Vector2d& start,
+                                                const Eigen::Vector2d& goal) {
+    std::vector<Eigen::Vector2d> path;
+    path.reserve(reference_path.size() + 2);
+    path.push_back(start);
+    for (const auto& p : reference_path) {
+        if ((p - path.back()).norm() > 1e-3) path.push_back(p);
+    }
+    if ((goal - path.back()).norm() > 1e-3) path.push_back(goal);
+    return path;
+}
+
+static int progressCb(void* ptr, const Eigen::VectorXd& x, const Eigen::VectorXd& g,
+                      const double fx, const double step, const int k, const int ls) {
+    (void)x;
+    (void)g;
+    MsLbfgsCtx* ctx = reinterpret_cast<MsLbfgsCtx*>(ptr);
+    ctx->last_cost = fx;
+    if (ctx->cfg.verbose && (k % 10 == 0 || k < 5)) {
+        std::cout << "[MSPlanner][L-BFGS] iter=" << k << " fx=" << fx
+                  << " step=" << step << " ls=" << ls << std::endl;
+    }
+    return 0;
+}
 
 static double evalCost(void* ptr, const Eigen::VectorXd& x, Eigen::VectorXd& g) {
     MsLbfgsCtx* ctx = reinterpret_cast<MsLbfgsCtx*>(ptr);
     const int inner_num = ctx->piece_num - 1;
+    ++ctx->eval_count;
 
     auto unpack = [&](const Eigen::VectorXd& v, Eigen::MatrixXd& inPs, Eigen::VectorXd& ts) {
         inPs.resize(2, std::max(0, inner_num));
@@ -276,7 +306,16 @@ bool MSPlanner::plan(const std::vector<Eigen::Vector2d>& reference_path,
                      const Eigen::Vector2d& goal,
                      const GlobalEsdfMap& map,
                      std::vector<Eigen::Vector2d>& optimized_path) const {
-    if (reference_path.size() < 2) return false;
+    if (reference_path.size() < 2) {
+        if (cfg_.verbose) std::cout << "[MSPlanner] reference path too short: " << reference_path.size() << std::endl;
+        return false;
+    }
+
+    if (cfg_.verbose) {
+        std::cout << "[MSPlanner] start optimization, ref_size=" << reference_path.size()
+                  << " start=(" << start.x() << ", " << start.y() << ")"
+                  << " goal=(" << goal.x() << ", " << goal.y() << ")" << std::endl;
+    }
 
     const int piece_num = std::max(2, static_cast<int>(reference_path.size()) - 1);
     const int inner_num = piece_num - 1;
@@ -306,8 +345,19 @@ bool MSPlanner::plan(const std::vector<Eigen::Vector2d>& reference_path,
     param.max_iterations = cfg_.max_lbfgs_iterations;
 
     double fx = 0.0;
-    int ret = lbfgs::lbfgs_optimize(x0, fx, evalCost, nullptr, nullptr, &ctx, param);
-    if (ret < 0) return false;
+    int ret = lbfgs::lbfgs_optimize(x0, fx, evalCost, nullptr, progressCb, &ctx, param);
+    if (ret < 0) {
+        optimized_path = fallbackPath(reference_path, start, goal);
+        std::cerr << "[MSPlanner] L-BFGS failed: ret=" << ret
+                  << " (" << lbfgs::lbfgs_strerror(ret) << "), eval=" << ctx.eval_count
+                  << ". fallback path size=" << optimized_path.size() << std::endl;
+        return optimized_path.size() >= 2;
+    }
+
+    if (cfg_.verbose) {
+        std::cout << "[MSPlanner] L-BFGS done: ret=" << ret << " fx=" << fx
+                  << " eval=" << ctx.eval_count << std::endl;
+    }
 
     Eigen::MatrixXd inPs(2, std::max(0, inner_num));
     Eigen::VectorXd ts(piece_num);
@@ -338,7 +388,14 @@ bool MSPlanner::plan(const std::vector<Eigen::Vector2d>& reference_path,
             optimized_path.push_back(piece.getPos(t));
         }
     }
-    return optimized_path.size() >= 2;
+    if (optimized_path.size() < 2) {
+        optimized_path = fallbackPath(reference_path, start, goal);
+        std::cerr << "[MSPlanner] optimized path invalid, use fallback size=" << optimized_path.size() << std::endl;
+        return optimized_path.size() >= 2;
+    }
+
+    if (cfg_.verbose) std::cout << "[MSPlanner] optimization output size=" << optimized_path.size() << std::endl;
+    return true;
 }
 
 bool DdrEsdfPipelinePlanner::plan(const Eigen::Vector2d& start,
@@ -346,6 +403,13 @@ bool DdrEsdfPipelinePlanner::plan(const Eigen::Vector2d& start,
                                   const GlobalEsdfMap& map,
                                   std::vector<Eigen::Vector2d>& front_end_path,
                                   std::vector<Eigen::Vector2d>& optimized_path) const {
-    if (!jps_.plan(start, goal, map, front_end_path)) return false;
-    return ms_.plan(front_end_path, start, goal, map, optimized_path);
+    if (!jps_.plan(start, goal, map, front_end_path)) {
+        std::cerr << "[DdrEsdfPipelinePlanner] JPS failed." << std::endl;
+        return false;
+    }
+    if (!ms_.plan(front_end_path, start, goal, map, optimized_path)) {
+        std::cerr << "[DdrEsdfPipelinePlanner] MS planning failed." << std::endl;
+        return false;
+    }
+    return true;
 }
