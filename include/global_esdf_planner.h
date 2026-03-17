@@ -25,10 +25,6 @@ private:
         if (!inRange(x, y)) return 0.0f;
         return esdf_[index(x, y)];
     }
-    inline void posToGrid(const Eigen::Vector2d& pos, double& gx, double& gy) const {
-        gx = (pos.x() - origin_.x()) / resolution_;
-        gy = (pos.y() - origin_.y()) / resolution_;
-    }
 
     double resolution_{0.1};
     double width_m_{0.0};
@@ -42,7 +38,27 @@ private:
     std::vector<Eigen::Vector2i> obstacle_cells_;
 };
 
-class BsplineEsdfPlanner {
+class JPSPlanner {
+public:
+    struct Config {
+        double search_safe_distance{0.25};
+        bool allow_diagonal{true};
+    };
+
+    JPSPlanner();
+    explicit JPSPlanner(const Config& cfg);
+
+    bool plan(
+        const Eigen::Vector2d& start,
+        const Eigen::Vector2d& goal,
+        const GlobalEsdfMap& map,
+        std::vector<Eigen::Vector2d>& path) const;
+
+private:
+    Config cfg_;
+};
+
+class MSPlanner {
 public:
     struct Config {
         int num_control_points{10};
@@ -58,21 +74,15 @@ public:
         double w_ref{0.6};
     };
 
-    BsplineEsdfPlanner();
-    explicit BsplineEsdfPlanner(const Config& cfg);
+    MSPlanner();
+    explicit MSPlanner(const Config& cfg);
 
-    std::vector<Eigen::Vector2d> plan(
-        const Eigen::Vector2d& start,
-        const Eigen::Vector2d& goal,
-        const GlobalEsdfMap& map,
-        std::vector<Eigen::Vector2d>* sampled_path = nullptr) const;
-
-    std::vector<Eigen::Vector2d> planFromReference(
+    bool plan(
         const std::vector<Eigen::Vector2d>& reference_path,
         const Eigen::Vector2d& start,
         const Eigen::Vector2d& goal,
         const GlobalEsdfMap& map,
-        std::vector<Eigen::Vector2d>* sampled_path = nullptr) const;
+        std::vector<Eigen::Vector2d>& optimized_path) const;
 
 private:
     struct KnotSpan {
@@ -83,27 +93,19 @@ private:
     KnotSpan makeClampedUniformKnots(int num_ctrl, int degree) const;
     std::vector<double> basisAt(double u, int num_ctrl, int degree, const std::vector<double>& knots) const;
     Eigen::Vector2d evaluate(const std::vector<Eigen::Vector2d>& ctrl_pts, const std::vector<double>& basis) const;
-    std::vector<Eigen::Vector2d> optimize(
-        const std::vector<Eigen::Vector2d>& init_ctrl_pts,
-        const std::vector<Eigen::Vector2d>* reference_path,
-        const Eigen::Vector2d& start,
-        const Eigen::Vector2d& goal,
-        const GlobalEsdfMap& map,
-        std::vector<Eigen::Vector2d>* sampled_path) const;
 
     Config cfg_;
 };
 
-class DdrEsdfPlanner {
+class DdrEsdfPipelinePlanner {
 public:
     struct Config {
-        double search_safe_distance{0.25};
-        bool allow_diagonal{true};
-        BsplineEsdfPlanner::Config backend_cfg{};
+        JPSPlanner::Config jps_cfg{};
+        MSPlanner::Config ms_cfg{};
     };
 
-    DdrEsdfPlanner();
-    explicit DdrEsdfPlanner(const Config& cfg);
+    DdrEsdfPipelinePlanner();
+    explicit DdrEsdfPipelinePlanner(const Config& cfg);
 
     bool plan(
         const Eigen::Vector2d& start,
@@ -113,14 +115,8 @@ public:
         std::vector<Eigen::Vector2d>& optimized_path) const;
 
 private:
-    bool frontEndAstar(
-        const Eigen::Vector2d& start,
-        const Eigen::Vector2d& goal,
-        const GlobalEsdfMap& map,
-        std::vector<Eigen::Vector2d>& path) const;
-
-    Config cfg_;
-    BsplineEsdfPlanner backend_;
+    JPSPlanner jps_;
+    MSPlanner ms_;
 };
 
 #endif

@@ -38,14 +38,15 @@
 ---
 
 
-## 🧭 新增：全局 ESDF + B 样条优化路径规划
+## 🧭 新增：全局 ESDF + DDR-opt 风格前后端规划 + MPC 控制
 
 本仓库已新增一个全局地图版本的 ESDF 与优化式路径规划模块：
 
 
-- 新增 DDR-opt 风格前后端规划器 `DdrEsdfPlanner`：
-  - 前端：A* 栅格搜索得到无碰撞离散参考路径（`planned_path_raw`）
-  - 后端：基于 ESDF 梯度 + B 样条优化（平滑/长度/曲率/参考路径跟踪）得到连续轨迹（`planned_path_opt`）
+- 新增 DDR-opt 风格前后端 + 控制链路：
+  - 前端：`JPSPlanner`（当前实现为栅格最短路搜索接口）输出无碰撞离散路径（`planned_path_raw`）
+  - 后端：`MSPlanner`（B 样条优化）结合 ESDF 梯度做平滑优化输出连续路径（`planned_path_opt`）
+  - 控制：`MpcController` 根据优化路径滚动发布 `cmd_vel`（`geometry_msgs::Twist`）
 
 - `GlobalEsdfMap`：在世界坐标系下维护占据栅格并构建 ESDF，可查询任意点的距离与梯度。
 - `BsplineEsdfPlanner`：基于三次 B 样条控制点做梯度下降优化，代价包含：
@@ -92,9 +93,10 @@ roslaunch rc_esdf_global_planner esdf_planner.launch
 - `/robot_pose_vis` (`geometry_msgs/PoseStamped`)：机器人位姿。
 - `/planned_path_raw` (`nav_msgs/Path`)：优化前路径（起终点直线初始化）。
 - `/planned_path_opt` (`nav_msgs/Path`)：优化后路径。
+- `/cmd_vel` (`geometry_msgs/Twist`)：MPC 控制器输出控制指令。
 
 当前已把地图参数、规划参数、输入输出话题、`frame_id`、`max_vis_dist`、`publish_opt_path_when_collision` 全部提取到 `launch/esdf_planner.launch`。
-新增可调参数：`search_safe_distance`、`allow_diagonal`（前端 A*）以及 `w_ref`（后端参考路径跟踪权重）。
+新增可调参数：`search_safe_distance`、`allow_diagonal`（前端 JPS）、`w_ref`（后端 MS 参考路径跟踪权重）以及 `mpc_lookahead_dist`、`mpc_max_linear_vel`、`mpc_max_angular_vel`、`mpc_k_theta`（MPC 控制输出）。
 
 RViz 工具栏中的 `2D Nav Goal` 会向 `/move_base_simple/goal` 发布目标点（可通过 launch 参数 `goal_topic` 改）。
 

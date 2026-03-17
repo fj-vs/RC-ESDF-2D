@@ -12,6 +12,7 @@
   <arg name="robot_pose_vis_topic" default="/robot_pose_vis"/>
   <arg name="planned_path_raw_topic" default="/planned_path_raw"/>
   <arg name="planned_path_opt_topic" default="/planned_path_opt"/>
+  <arg name="cmd_vel_topic" default="/cmd_vel"/>
 
   <arg name="map_width" default="40.0"/>
   <arg name="map_height" default="40.0"/>
@@ -20,9 +21,11 @@
   <arg name="origin_y" default="-20.0"/>
   <arg name="max_vis_dist" default="3.0"/>
 
+  <!-- JPS front-end -->
   <arg name="search_safe_distance" default="0.25"/>
   <arg name="allow_diagonal" default="true"/>
 
+  <!-- MS back-end -->
   <arg name="safe_distance" default="0.35"/>
   <arg name="max_curvature" default="0.5"/>
   <arg name="num_control_points" default="10"/>
@@ -34,6 +37,13 @@
   <arg name="w_length" default="0.12"/>
   <arg name="w_kinematic" default="2.5"/>
   <arg name="w_ref" default="0.6"/>
+
+  <!-- MPC controller -->
+  <arg name="mpc_lookahead_dist" default="0.8"/>
+  <arg name="mpc_max_linear_vel" default="0.8"/>
+  <arg name="mpc_max_angular_vel" default="1.0"/>
+  <arg name="mpc_k_theta" default="1.5"/>
+
   <arg name="publish_opt_path_when_collision" default="true"/>
 
   <node pkg="rc_esdf_global_planner" type="esdf_bspline_planner_node" name="esdf_bspline_planner_node" output="screen">
@@ -47,6 +57,7 @@
     <param name="robot_pose_vis_topic" value="$(arg robot_pose_vis_topic)"/>
     <param name="planned_path_raw_topic" value="$(arg planned_path_raw_topic)"/>
     <param name="planned_path_opt_topic" value="$(arg planned_path_opt_topic)"/>
+    <param name="cmd_vel_topic" value="$(arg cmd_vel_topic)"/>
 
     <param name="map_width" value="$(arg map_width)"/>
     <param name="map_height" value="$(arg map_height)"/>
@@ -69,6 +80,12 @@
     <param name="w_length" value="$(arg w_length)"/>
     <param name="w_kinematic" value="$(arg w_kinematic)"/>
     <param name="w_ref" value="$(arg w_ref)"/>
+
+    <param name="mpc_lookahead_dist" value="$(arg mpc_lookahead_dist)"/>
+    <param name="mpc_max_linear_vel" value="$(arg mpc_max_linear_vel)"/>
+    <param name="mpc_max_angular_vel" value="$(arg mpc_max_angular_vel)"/>
+    <param name="mpc_k_theta" value="$(arg mpc_k_theta)"/>
+
     <param name="publish_opt_path_when_collision" value="$(arg publish_opt_path_when_collision)"/>
   </node>
 
