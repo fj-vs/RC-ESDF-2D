@@ -32,6 +32,7 @@ include_directories(
 
 add_library(esdf_global_planner
   src/global_esdf_planner.cpp
+  src/nmpc_controller.cpp
 )
 
 target_link_libraries(esdf_global_planner

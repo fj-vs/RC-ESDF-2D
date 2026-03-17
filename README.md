@@ -45,10 +45,14 @@
 
 - 新增 DDR-opt 风格前后端 + 控制链路：
   - 前端：`JPSPlanner`（当前实现为栅格最短路搜索接口）输出无碰撞离散路径（`planned_path_raw`）
-  - 后端：`MSPlanner` 使用 DDR-opt 的 MINCO 轨迹参数化过程（`minco::MINCO_S3NU`）生成连续轨迹，并结合 ESDF 安全距离做修正（`planned_path_opt`）
-  - 控制：`MpcController` 使用滚动时域预测控制思想生成控制量并发布 `cmd_vel`（`geometry_msgs::Twist`）
+  - 后端：`MSPlanner`（MINCO-S3 + L-BFGS）以参考路径内点与分段时间为优化变量，使用 L-BFGS 优化轨迹参数，再结合 ESDF 约束输出连续路径（`planned_path_opt`）
+  - 控制：`MpcController`（有限时域离散采样 MPC）发布 `cmd_vel`（`geometry_msgs::Twist`）
 
 - `GlobalEsdfMap`：在世界坐标系下维护占据栅格并构建 ESDF，可查询任意点的距离与梯度。
+- `BsplineEsdfPlanner`：基于三次 B 样条控制点做梯度下降优化，代价包含：
+  - 平滑项（二阶差分）
+  - 路径长度项
+  - ESDF 安全距离约束项（通过 `safe_distance - dist` 的惩罚，并用 ESDF 梯度反向传播到控制点）
 
 你可以直接参考 `main.cpp` 中的示例：
 1. 构建全局障碍地图；
@@ -71,7 +75,7 @@
   - 差速车曲率约束项（`max_curvature`）
 - 发布 `/planned_path` (`nav_msgs/Path`) 到 RViz 可视化。
 
-默认参数可通过 ROS 参数服务器设置：`safe_distance`、`max_curvature`、`num_control_points`、`max_iterations`、`w_obstacle` 等。
+默认参数可通过 ROS 参数服务器设置：`safe_distance`、`max_lbfgs_iterations`、`w_obstacle`、`w_ref` 等。
 
 ## 🚀 快速开始 (Quick Start)
 
@@ -92,7 +96,7 @@ roslaunch rc_esdf_global_planner esdf_planner.launch
 - `/cmd_vel` (`geometry_msgs/Twist`)：MPC 控制器输出控制指令。
 
 当前已把地图参数、规划参数、输入输出话题、`frame_id`、`max_vis_dist`、`publish_opt_path_when_collision` 全部提取到 `launch/esdf_planner.launch`。
-新增可调参数：`search_safe_distance`、`allow_diagonal`（前端 JPS）、`w_ref`（后端 MS 参考路径跟踪权重）以及 `mpc_horizon_steps`、`mpc_dt`、`mpc_max_linear_vel`、`mpc_max_angular_vel`、`mpc_w_pos`、`mpc_w_heading`、`mpc_w_input`（MPC 控制输出）。
+新增可调参数：`search_safe_distance`、`allow_diagonal`（前端 JPS）、`max_lbfgs_iterations`、`w_obstacle`、`w_ref`（后端 MS L-BFGS + MINCO）以及 `mpc_lookahead_dist`、`mpc_max_linear_vel`、`mpc_max_angular_vel`、`mpc_dt`、`mpc_horizon`、`mpc_w_track`、`mpc_w_heading`、`mpc_w_control`（NMPC 控制输出）。
 
 RViz 工具栏中的 `2D Nav Goal` 会向 `/move_base_simple/goal` 发布目标点（可通过 launch 参数 `goal_topic` 改）。
 

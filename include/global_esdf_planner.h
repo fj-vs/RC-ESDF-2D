@@ -63,8 +63,8 @@ public:
     struct Config {
         int num_control_points{10};
         int sample_per_segment{16};
-        int max_iterations{220};
-        double step_size{0.03};
+        int max_lbfgs_iterations{80};
+        double initial_step{0.1};
         double safe_distance{0.35};
         double max_curvature{0.5};
         double w_smooth{1.5};
@@ -85,15 +85,6 @@ public:
         std::vector<Eigen::Vector2d>& optimized_path) const;
 
 private:
-    struct KnotSpan {
-        int span;
-        std::vector<double> knots;
-    };
-
-    KnotSpan makeClampedUniformKnots(int num_ctrl, int degree) const;
-    std::vector<double> basisAt(double u, int num_ctrl, int degree, const std::vector<double>& knots) const;
-    Eigen::Vector2d evaluate(const std::vector<Eigen::Vector2d>& ctrl_pts, const std::vector<double>& basis) const;
-
     Config cfg_;
 };
 

@@ -1,4 +1,5 @@
 #include "global_esdf_planner.h"
+#include "nmpc_controller/mpc_controller.h"
 
 #include <geometry_msgs/Pose2D.h>
 #include <geometry_msgs/PoseStamped.h>
@@ -13,91 +14,10 @@
 #include <cmath>
 #include <vector>
 
-class MpcController {
-public:
-    struct Config {
-        int horizon_steps{12};
-        double dt{0.08};
-        double max_linear_vel{0.8};
-        double max_angular_vel{1.0};
-        double w_pos{1.0};
-        double w_heading{0.4};
-        double w_input{0.05};
-    };
-
-    MpcController() : cfg_(Config{}) {}
-    explicit MpcController(const Config& cfg) : cfg_(cfg) {}
-
-    geometry_msgs::Twist compute(
-        const Eigen::Vector3d& robot_pose,
-        const std::vector<Eigen::Vector2d>& path,
-        bool& goal_reached) const {
-        geometry_msgs::Twist cmd;
-        goal_reached = false;
-        if (path.empty()) return cmd;
-
-        const Eigen::Vector2d goal = path.back();
-        if ((goal - robot_pose.head<2>()).norm() < 0.2) {
-            goal_reached = true;
-            return cmd;
-        }
-
-        const int cand_num = 15;
-        double best_cost = 1e18;
-        double best_v = 0.0;
-        double best_w = 0.0;
-
-        for (int i = 0; i < cand_num; ++i) {
-            const double w = -cfg_.max_angular_vel + 2.0 * cfg_.max_angular_vel * i / (cand_num - 1);
-            const double v = cfg_.max_linear_vel;
-
-            Eigen::Vector3d x = robot_pose;
-            double cost = 0.0;
-            for (int k = 0; k < cfg_.horizon_steps; ++k) {
-                x.x() += v * std::cos(x.z()) * cfg_.dt;
-                x.y() += v * std::sin(x.z()) * cfg_.dt;
-                x.z() += w * cfg_.dt;
-
-                const size_t idx = std::min(path.size() - 1, static_cast<size_t>((k + 1) * path.size() / cfg_.horizon_steps));
-                const Eigen::Vector2d ref = path[idx];
-                const double dx = x.x() - ref.x();
-                const double dy = x.y() - ref.y();
-                const double pos_cost = dx * dx + dy * dy;
-
-                double ref_yaw = std::atan2(goal.y() - x.y(), goal.x() - x.x());
-                double dyaw = ref_yaw - x.z();
-                while (dyaw > M_PI) dyaw -= 2.0 * M_PI;
-                while (dyaw < -M_PI) dyaw += 2.0 * M_PI;
-
-                cost += cfg_.w_pos * pos_cost + cfg_.w_heading * dyaw * dyaw;
-            }
-            cost += cfg_.w_input * (v * v + w * w);
-
-            if (cost < best_cost) {
-                best_cost = cost;
-                best_v = v;
-                best_w = w;
-            }
-        }
-
-        cmd.linear.x = best_v;
-        cmd.angular.z = best_w;
-        return cmd;
-    }
-
-private:
-    Config cfg_;
-};
-
 class EsdfPlannerNode {
 public:
     EsdfPlannerNode() : nh_("~") {
-        double map_width = 40.0;
-        double map_height = 40.0;
-        double resolution = 0.1;
-        double origin_x = -20.0;
-        double origin_y = -20.0;
-
+        double map_width = 40.0, map_height = 40.0, resolution = 0.1, origin_x = -20.0, origin_y = -20.0;
         nh_.param("map_width", map_width, map_width);
         nh_.param("map_height", map_height, map_height);
         nh_.param("resolution", resolution, resolution);
@@ -119,30 +39,23 @@ public:
         DdrEsdfPipelinePlanner::Config cfg;
         nh_.param("search_safe_distance", cfg.jps_cfg.search_safe_distance, cfg.jps_cfg.search_safe_distance);
         nh_.param("allow_diagonal", cfg.jps_cfg.allow_diagonal, cfg.jps_cfg.allow_diagonal);
-
         nh_.param("safe_distance", cfg.ms_cfg.safe_distance, cfg.ms_cfg.safe_distance);
-        nh_.param("max_curvature", cfg.ms_cfg.max_curvature, cfg.ms_cfg.max_curvature);
-        nh_.param("num_control_points", cfg.ms_cfg.num_control_points, cfg.ms_cfg.num_control_points);
-        nh_.param("sample_per_segment", cfg.ms_cfg.sample_per_segment, cfg.ms_cfg.sample_per_segment);
-        nh_.param("max_iterations", cfg.ms_cfg.max_iterations, cfg.ms_cfg.max_iterations);
-        nh_.param("step_size", cfg.ms_cfg.step_size, cfg.ms_cfg.step_size);
-        nh_.param("w_smooth", cfg.ms_cfg.w_smooth, cfg.ms_cfg.w_smooth);
+        nh_.param("max_lbfgs_iterations", cfg.ms_cfg.max_lbfgs_iterations, cfg.ms_cfg.max_lbfgs_iterations);
         nh_.param("w_obstacle", cfg.ms_cfg.w_obstacle, cfg.ms_cfg.w_obstacle);
-        nh_.param("w_length", cfg.ms_cfg.w_length, cfg.ms_cfg.w_length);
-        nh_.param("w_kinematic", cfg.ms_cfg.w_kinematic, cfg.ms_cfg.w_kinematic);
         nh_.param("w_ref", cfg.ms_cfg.w_ref, cfg.ms_cfg.w_ref);
 
-        MpcController::Config mpc_cfg;
-        nh_.param("mpc_horizon_steps", mpc_cfg.horizon_steps, mpc_cfg.horizon_steps);
-        nh_.param("mpc_dt", mpc_cfg.dt, mpc_cfg.dt);
+        NmpcController::Config mpc_cfg;
+        nh_.param("mpc_lookahead_dist", mpc_cfg.lookahead_dist, mpc_cfg.lookahead_dist);
         nh_.param("mpc_max_linear_vel", mpc_cfg.max_linear_vel, mpc_cfg.max_linear_vel);
         nh_.param("mpc_max_angular_vel", mpc_cfg.max_angular_vel, mpc_cfg.max_angular_vel);
-        nh_.param("mpc_w_pos", mpc_cfg.w_pos, mpc_cfg.w_pos);
+        nh_.param("mpc_dt", mpc_cfg.dt, mpc_cfg.dt);
+        nh_.param("mpc_horizon", mpc_cfg.horizon, mpc_cfg.horizon);
+        nh_.param("mpc_w_track", mpc_cfg.w_track, mpc_cfg.w_track);
         nh_.param("mpc_w_heading", mpc_cfg.w_heading, mpc_cfg.w_heading);
-        nh_.param("mpc_w_input", mpc_cfg.w_input, mpc_cfg.w_input);
+        nh_.param("mpc_w_control", mpc_cfg.w_control, mpc_cfg.w_control);
 
         planner_ = DdrEsdfPipelinePlanner(cfg);
-        mpc_controller_ = MpcController(mpc_cfg);
+        nmpc_controller_ = NmpcController(mpc_cfg);
         global_map_.initialize(map_width, map_height, resolution, Eigen::Vector2d(origin_x, origin_y));
 
         pose_sub_ = nh_.subscribe(robot_pose_topic_, 1, &EsdfPlannerNode::poseCallback, this);
@@ -155,7 +68,7 @@ public:
         pose_vis_pub_ = nh_.advertise<geometry_msgs::PoseStamped>(robot_pose_vis_topic_, 1, true);
         cmd_vel_pub_ = nh_.advertise<geometry_msgs::Twist>(cmd_vel_topic_, 1);
 
-        mpc_timer_ = nh_.createTimer(ros::Duration(0.05), &EsdfPlannerNode::mpcCallback, this);
+        nmpc_timer_ = nh_.createTimer(ros::Duration(0.05), &EsdfPlannerNode::nmpcCallback, this);
     }
 
 private:
@@ -165,7 +78,6 @@ private:
         out.pose.position.x = p.x();
         out.pose.position.y = p.y();
         out.pose.position.z = 0.0;
-
         tf2::Quaternion q;
         q.setRPY(0.0, 0.0, yaw);
         out.pose.orientation.x = q.x();
@@ -175,17 +87,17 @@ private:
         return out;
     }
 
-    void mpcCallback(const ros::TimerEvent&) {
+    void nmpcCallback(const ros::TimerEvent&) {
         if (!has_pose_ || latest_opt_path_.size() < 2) return;
         bool goal_reached = false;
         const Eigen::Vector3d pose(robot_pose_.x, robot_pose_.y, robot_pose_.theta);
-        geometry_msgs::Twist cmd = mpc_controller_.compute(pose, latest_opt_path_, goal_reached);
+        const geometry_msgs::Twist cmd = nmpc_controller_.compute(pose, latest_opt_path_, goal_reached);
         cmd_vel_pub_.publish(cmd);
     }
 
     void publishRobotPose() {
         if (!has_pose_) return;
-        geometry_msgs::PoseStamped pose = toPoseStamped(Eigen::Vector2d(robot_pose_.x, robot_pose_.y), robot_pose_.theta, frame_id_);
+        auto pose = toPoseStamped(Eigen::Vector2d(robot_pose_.x, robot_pose_.y), robot_pose_.theta, frame_id_);
         pose.header.stamp = ros::Time::now();
         pose_vis_pub_.publish(pose);
     }
@@ -207,10 +119,7 @@ private:
             const double d = static_cast<double>(esdf[i]);
             if (d > 1e5) grid.data[i] = -1;
             else if (d < 0.0) grid.data[i] = 100;
-            else {
-                const double v = std::min(d, max_vis_dist_) / std::max(max_vis_dist_, 1e-6);
-                grid.data[i] = static_cast<int8_t>(std::round(v * 100.0));
-            }
+            else grid.data[i] = static_cast<int8_t>(std::round(std::min(d, max_vis_dist_) / std::max(max_vis_dist_, 1e-6) * 100.0));
         }
         esdf_pub_.publish(grid);
     }
@@ -222,7 +131,7 @@ private:
         for (size_t i = 0; i < points.size(); ++i) {
             const size_t j = std::min(i + 1, points.size() - 1);
             const double yaw = std::atan2(points[j].y() - points[i].y(), points[j].x() - points[i].x());
-            geometry_msgs::PoseStamped p = toPoseStamped(points[i], yaw, frame_id_);
+            auto p = toPoseStamped(points[i], yaw, frame_id_);
             p.header.stamp = stamp;
             path.poses.push_back(p);
         }
@@ -244,18 +153,14 @@ private:
     void scanCallback(const sensor_msgs::LaserScan::ConstPtr& scan) {
         if (!has_pose_) return;
         global_map_.clearObstacles();
-
         for (size_t i = 0; i < scan->ranges.size(); ++i) {
             const float r = scan->ranges[i];
             if (!std::isfinite(r) || r < scan->range_min || r > scan->range_max) continue;
             const double angle = scan->angle_min + static_cast<double>(i) * scan->angle_increment;
             const double lx = static_cast<double>(r) * std::cos(angle);
             const double ly = static_cast<double>(r) * std::sin(angle);
-            const double c = std::cos(robot_pose_.theta);
-            const double s = std::sin(robot_pose_.theta);
-            const double wx = robot_pose_.x + c * lx - s * ly;
-            const double wy = robot_pose_.y + s * lx + c * ly;
-            global_map_.setObstacle(Eigen::Vector2d(wx, wy));
+            const double c = std::cos(robot_pose_.theta), s = std::sin(robot_pose_.theta);
+            global_map_.setObstacle(Eigen::Vector2d(robot_pose_.x + c * lx - s * ly, robot_pose_.y + s * lx + c * ly));
         }
 
         global_map_.buildEsdf();
@@ -266,28 +171,20 @@ private:
     void tryPlanAndPublish() {
         if (!has_pose_ || !has_goal_) return;
         const Eigen::Vector2d start(robot_pose_.x, robot_pose_.y);
-
-        std::vector<Eigen::Vector2d> raw_path;
-        std::vector<Eigen::Vector2d> opt_path;
+        std::vector<Eigen::Vector2d> raw_path, opt_path;
         if (!planner_.plan(start, goal_, global_map_, raw_path, opt_path)) return;
         if (opt_path.size() < 2) return;
-
         latest_opt_path_ = opt_path;
 
         double min_dist = 1e6;
         for (const auto& pt : opt_path) {
-            double d;
-            Eigen::Vector2d g;
+            double d; Eigen::Vector2d g;
             if (global_map_.query(pt, d, g)) min_dist = std::min(min_dist, d);
         }
 
         const ros::Time stamp = ros::Time::now();
         path_raw_pub_.publish(buildPathMsg(raw_path, stamp));
-
-        if (min_dist < 0.0) {
-            ROS_WARN_THROTTLE(1.0, "Optimized path intersects occupied cells. min_dist=%.3f", min_dist);
-            if (!publish_opt_path_when_collision_) return;
-        }
+        if (min_dist < 0.0 && !publish_opt_path_when_collision_) return;
         path_opt_pub_.publish(buildPathMsg(opt_path, stamp));
         publishRobotPose();
     }
@@ -295,11 +192,11 @@ private:
     ros::NodeHandle nh_;
     ros::Subscriber pose_sub_, scan_sub_, goal_sub_;
     ros::Publisher path_raw_pub_, path_opt_pub_, esdf_pub_, pose_vis_pub_, cmd_vel_pub_;
-    ros::Timer mpc_timer_;
+    ros::Timer nmpc_timer_;
 
     GlobalEsdfMap global_map_;
     DdrEsdfPipelinePlanner planner_;
-    MpcController mpc_controller_;
+    NmpcController nmpc_controller_;
     std::vector<Eigen::Vector2d> latest_opt_path_;
 
     geometry_msgs::Pose2D robot_pose_;

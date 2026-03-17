@@ -30,22 +30,19 @@
   <arg name="max_curvature" default="0.5"/>
   <arg name="num_control_points" default="10"/>
   <arg name="sample_per_segment" default="16"/>
-  <arg name="max_iterations" default="220"/>
-  <arg name="step_size" default="0.03"/>
-  <arg name="w_smooth" default="1.5"/>
-  <arg name="w_obstacle" default="12.0"/>
-  <arg name="w_length" default="0.12"/>
-  <arg name="w_kinematic" default="2.5"/>
+  <arg name="max_lbfgs_iterations" default="80"/>
+    <arg name="w_obstacle" default="12.0"/>
   <arg name="w_ref" default="0.6"/>
 
   <!-- MPC controller -->
-  <arg name="mpc_horizon_steps" default="12"/>
-  <arg name="mpc_dt" default="0.08"/>
+  <arg name="mpc_lookahead_dist" default="0.8"/>
   <arg name="mpc_max_linear_vel" default="0.8"/>
   <arg name="mpc_max_angular_vel" default="1.0"/>
-  <arg name="mpc_w_pos" default="1.0"/>
-  <arg name="mpc_w_heading" default="0.4"/>
-  <arg name="mpc_w_input" default="0.05"/>
+  <arg name="mpc_dt" default="0.1"/>
+  <arg name="mpc_horizon" default="12"/>
+  <arg name="mpc_w_track" default="2.0"/>
+  <arg name="mpc_w_heading" default="0.8"/>
+  <arg name="mpc_w_control" default="0.1"/>
 
   <arg name="publish_opt_path_when_collision" default="true"/>
 
@@ -76,21 +73,18 @@
     <param name="max_curvature" value="$(arg max_curvature)"/>
     <param name="num_control_points" value="$(arg num_control_points)"/>
     <param name="sample_per_segment" value="$(arg sample_per_segment)"/>
-    <param name="max_iterations" value="$(arg max_iterations)"/>
-    <param name="step_size" value="$(arg step_size)"/>
-    <param name="w_smooth" value="$(arg w_smooth)"/>
+    <param name="max_lbfgs_iterations" value="$(arg max_lbfgs_iterations)"/>
     <param name="w_obstacle" value="$(arg w_obstacle)"/>
-    <param name="w_length" value="$(arg w_length)"/>
-    <param name="w_kinematic" value="$(arg w_kinematic)"/>
     <param name="w_ref" value="$(arg w_ref)"/>
 
-    <param name="mpc_horizon_steps" value="$(arg mpc_horizon_steps)"/>
-    <param name="mpc_dt" value="$(arg mpc_dt)"/>
+    <param name="mpc_lookahead_dist" value="$(arg mpc_lookahead_dist)"/>
     <param name="mpc_max_linear_vel" value="$(arg mpc_max_linear_vel)"/>
     <param name="mpc_max_angular_vel" value="$(arg mpc_max_angular_vel)"/>
-    <param name="mpc_w_pos" value="$(arg mpc_w_pos)"/>
+    <param name="mpc_dt" value="$(arg mpc_dt)"/>
+    <param name="mpc_horizon" value="$(arg mpc_horizon)"/>
+    <param name="mpc_w_track" value="$(arg mpc_w_track)"/>
     <param name="mpc_w_heading" value="$(arg mpc_w_heading)"/>
-    <param name="mpc_w_input" value="$(arg mpc_w_input)"/>
+    <param name="mpc_w_control" value="$(arg mpc_w_control)"/>
 
     <param name="publish_opt_path_when_collision" value="$(arg publish_opt_path_when_collision)"/>
   </node>

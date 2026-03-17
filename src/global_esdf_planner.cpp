@@ -1,4 +1,6 @@
 #include "global_esdf_planner.h"
+
+#include "gcopter/lbfgs.hpp"
 #include "gcopter/minco.hpp"
 
 #include <algorithm>
@@ -18,7 +20,6 @@ void GlobalEsdfMap::initialize(double width_m, double height_m, double resolutio
     height_m_ = height_m;
     resolution_ = resolution;
     origin_ = origin;
-
     size_x_ = static_cast<int>(std::ceil(width_m_ / resolution_));
     size_y_ = static_cast<int>(std::ceil(height_m_ / resolution_));
 
@@ -95,11 +96,8 @@ bool GlobalEsdfMap::query(const Eigen::Vector2d& pos_world, double& dist, Eigen:
     return true;
 }
 
-bool JPSPlanner::plan(
-    const Eigen::Vector2d& start,
-    const Eigen::Vector2d& goal,
-    const GlobalEsdfMap& map,
-    std::vector<Eigen::Vector2d>& path) const {
+bool JPSPlanner::plan(const Eigen::Vector2d& start, const Eigen::Vector2d& goal, const GlobalEsdfMap& map,
+                      std::vector<Eigen::Vector2d>& path) const {
     const int sx = map.sizeX();
     const int sy = map.sizeY();
     if (sx <= 2 || sy <= 2) return false;
@@ -113,49 +111,47 @@ bool JPSPlanner::plan(
         y = static_cast<int>(std::floor((p.y() - map.origin().y()) / map.resolution()));
     };
 
-    int start_x, start_y, goal_x, goal_y;
-    toGrid(start, start_x, start_y);
-    toGrid(goal, goal_x, goal_y);
-    if (start_x < 0 || start_x >= sx || start_y < 0 || start_y >= sy) return false;
-    if (goal_x < 0 || goal_x >= sx || goal_y < 0 || goal_y >= sy) return false;
+    int sx0, sy0, gx0, gy0;
+    toGrid(start, sx0, sy0);
+    toGrid(goal, gx0, gy0);
+    if (sx0 < 0 || sx0 >= sx || sy0 < 0 || sy0 >= sy) return false;
+    if (gx0 < 0 || gx0 >= sx || gy0 < 0 || gy0 >= sy) return false;
 
     const auto& esdf = map.esdfData();
-    auto traversable = [&](int x, int y) {
+    auto freeCell = [&](int x, int y) {
         const int id = toId(x, y);
         return id >= 0 && id < static_cast<int>(esdf.size()) && esdf[id] > cfg_.search_safe_distance;
     };
-    if (!traversable(start_x, start_y) || !traversable(goal_x, goal_y)) return false;
+    if (!freeCell(sx0, sy0) || !freeCell(gx0, gy0)) return false;
 
     struct Node { int id; double f; };
     struct Cmp { bool operator()(const Node& a, const Node& b) const { return a.f > b.f; } };
-
     std::priority_queue<Node, std::vector<Node>, Cmp> open;
     std::vector<double> g(sx * sy, std::numeric_limits<double>::infinity());
     std::vector<int> parent(sx * sy, -1);
     std::vector<uint8_t> closed(sx * sy, 0);
 
-    const int start_id = toId(start_x, start_y);
-    const int goal_id = toId(goal_x, goal_y);
-
-    auto heuristic = [&](int x, int y) {
-        const double dx = static_cast<double>(x - goal_x);
-        const double dy = static_cast<double>(y - goal_y);
+    const int sid = toId(sx0, sy0);
+    const int gid = toId(gx0, gy0);
+    auto h = [&](int x, int y) {
+        const double dx = static_cast<double>(x - gx0);
+        const double dy = static_cast<double>(y - gy0);
         return std::sqrt(dx * dx + dy * dy);
     };
 
-    g[start_id] = 0.0;
-    open.push({start_id, heuristic(start_x, start_y)});
+    g[sid] = 0.0;
+    open.push({sid, h(sx0, sy0)});
 
     const std::vector<Eigen::Vector2i> dirs4 = {{1,0},{-1,0},{0,1},{0,-1}};
     const std::vector<Eigen::Vector2i> dirs8 = {{1,0},{-1,0},{0,1},{0,-1},{1,1},{1,-1},{-1,1},{-1,-1}};
     const auto& dirs = cfg_.allow_diagonal ? dirs8 : dirs4;
 
     while (!open.empty()) {
-        const Node cur = open.top();
+        Node cur = open.top();
         open.pop();
         if (closed[cur.id]) continue;
         closed[cur.id] = 1;
-        if (cur.id == goal_id) break;
+        if (cur.id == gid) break;
 
         const int cx = cur.id % sx;
         const int cy = cur.id / sx;
@@ -163,24 +159,22 @@ bool JPSPlanner::plan(
             const int nx = cx + d.x();
             const int ny = cy + d.y();
             if (nx < 0 || nx >= sx || ny < 0 || ny >= sy) continue;
-            if (!traversable(nx, ny)) continue;
+            if (!freeCell(nx, ny)) continue;
             const int nid = toId(nx, ny);
             if (closed[nid]) continue;
-
             const double step = (std::abs(d.x()) + std::abs(d.y()) == 2) ? std::sqrt(2.0) : 1.0;
             const double ng = g[cur.id] + step;
             if (ng < g[nid]) {
                 g[nid] = ng;
                 parent[nid] = cur.id;
-                open.push({nid, ng + heuristic(nx, ny)});
+                open.push({nid, ng + h(nx, ny)});
             }
         }
     }
 
-    if (parent[goal_id] == -1) return false;
-
+    if (parent[gid] == -1) return false;
     std::vector<Eigen::Vector2d> rev;
-    for (int id = goal_id; id != -1; id = parent[id]) {
+    for (int id = gid; id != -1; id = parent[id]) {
         const int x = id % sx;
         const int y = id / sx;
         rev.push_back(toWorld(x, y));
@@ -189,126 +183,169 @@ bool JPSPlanner::plan(
     return path.size() >= 2;
 }
 
-MSPlanner::KnotSpan MSPlanner::makeClampedUniformKnots(int num_ctrl, int degree) const {
-    const int m = num_ctrl + degree + 1;
-    const int interior = m - 2 * (degree + 1);
-    std::vector<double> knots(m, 0.0);
-    for (int i = 0; i <= degree; ++i) knots[i] = 0.0;
-    for (int i = 0; i <= degree; ++i) knots[m - 1 - i] = 1.0;
-    for (int i = 1; i <= interior; ++i) knots[degree + i] = static_cast<double>(i) / (interior + 1);
-    return {std::max(1, num_ctrl - degree), knots};
-}
+namespace {
+struct MsLbfgsCtx {
+    const GlobalEsdfMap* map{nullptr};
+    const std::vector<Eigen::Vector2d>* ref{nullptr};
+    Eigen::Vector2d start{0, 0};
+    Eigen::Vector2d goal{0, 0};
+    MSPlanner::Config cfg;
+    int piece_num{0};
+};
 
-std::vector<double> MSPlanner::basisAt(double u, int num_ctrl, int degree, const std::vector<double>& knots) const {
-    std::vector<double> n(num_ctrl, 0.0);
-    for (int i = 0; i < num_ctrl; ++i) {
-        if ((u >= knots[i] && u < knots[i + 1]) || (u == 1.0 && i == num_ctrl - 1 && u >= knots[i] && u <= knots[i + 1])) {
-            n[i] = 1.0;
+static double evalCost(void* ptr, const Eigen::VectorXd& x, Eigen::VectorXd& g) {
+    MsLbfgsCtx* ctx = reinterpret_cast<MsLbfgsCtx*>(ptr);
+    const int inner_num = ctx->piece_num - 1;
+
+    auto unpack = [&](const Eigen::VectorXd& v, Eigen::MatrixXd& inPs, Eigen::VectorXd& ts) {
+        inPs.resize(2, std::max(0, inner_num));
+        ts.resize(ctx->piece_num);
+        for (int i = 0; i < inner_num; ++i) {
+            inPs(0, i) = v(2 * i);
+            inPs(1, i) = v(2 * i + 1);
         }
-    }
-    for (int k = 1; k <= degree; ++k) {
-        std::vector<double> next(num_ctrl, 0.0);
-        for (int i = 0; i < num_ctrl; ++i) {
-            const double left_den = knots[i + k] - knots[i];
-            const double right_den = knots[i + k + 1] - knots[i + 1];
-            double left = 0.0, right = 0.0;
-            if (left_den > 1e-12) left = (u - knots[i]) / left_den * n[i];
-            if (right_den > 1e-12 && i + 1 < num_ctrl) right = (knots[i + k + 1] - u) / right_den * n[i + 1];
-            next[i] = left + right;
+        for (int i = 0; i < ctx->piece_num; ++i) {
+            ts(i) = std::max(0.03, std::exp(v(2 * inner_num + i)));
         }
-        n.swap(next);
+    };
+
+    auto compute_only = [&](const Eigen::VectorXd& v) {
+        Eigen::MatrixXd inPs;
+        Eigen::VectorXd ts;
+        unpack(v, inPs, ts);
+
+        Eigen::Matrix<double, 2, 3> head, tail;
+        head.setZero(); tail.setZero();
+        head.col(0) = ctx->start;
+        tail.col(0) = ctx->goal;
+
+        minco::MINCO_S3NU minco;
+        minco.setConditions(head, tail, ctx->piece_num, Eigen::Vector2d(1.0, 1.0));
+        minco.setParameters(inPs, ts);
+
+        double energy = 0.0;
+        minco.getEnergy(energy);
+        double cost = 0.5 * energy;
+
+        Trajectory<5, 2> traj;
+        minco.getTrajectory(traj);
+
+        const int sample_each = std::max(8, ctx->cfg.sample_per_segment);
+        int ref_id = 0;
+        for (int k = 0; k < traj.getPieceNum(); ++k) {
+            const auto& piece = traj[k];
+            for (int i = 0; i <= sample_each; ++i) {
+                const double t = piece.getDuration() * static_cast<double>(i) / sample_each;
+                const Eigen::Vector2d p = piece.getPos(t);
+
+                double d; Eigen::Vector2d gd;
+                if (ctx->map->query(p, d, gd)) {
+                    const double vios = ctx->cfg.safe_distance - d;
+                    if (vios > 0.0) cost += ctx->cfg.w_obstacle * vios * vios;
+                }
+
+                if (!ctx->ref->empty()) {
+                    ref_id = std::min<int>(ctx->ref->size() - 1, ref_id);
+                    const Eigen::Vector2d dr = p - (*ctx->ref)[ref_id];
+                    cost += ctx->cfg.w_ref * dr.squaredNorm();
+                    if (ref_id + 1 < static_cast<int>(ctx->ref->size())) ++ref_id;
+                }
+            }
+        }
+
+        cost += 0.1 * ts.sum();
+        return cost;
+    };
+
+    const double fx = compute_only(x);
+    g.resize(x.size());
+    const double eps = 1e-4;
+    for (int i = 0; i < x.size(); ++i) {
+        Eigen::VectorXd xp = x;
+        Eigen::VectorXd xm = x;
+        xp(i) += eps;
+        xm(i) -= eps;
+        g(i) = (compute_only(xp) - compute_only(xm)) / (2.0 * eps);
     }
-    return n;
+    return fx;
 }
+} // namespace
 
-Eigen::Vector2d MSPlanner::evaluate(const std::vector<Eigen::Vector2d>& ctrl_pts, const std::vector<double>& basis) const {
-    Eigen::Vector2d p(0.0, 0.0);
-    for (size_t i = 0; i < ctrl_pts.size(); ++i) p += basis[i] * ctrl_pts[i];
-    return p;
-}
+bool MSPlanner::plan(const std::vector<Eigen::Vector2d>& reference_path,
+                     const Eigen::Vector2d& start,
+                     const Eigen::Vector2d& goal,
+                     const GlobalEsdfMap& map,
+                     std::vector<Eigen::Vector2d>& optimized_path) const {
+    if (reference_path.size() < 2) return false;
 
-bool MSPlanner::plan(
-    const std::vector<Eigen::Vector2d>& reference_path,
-    const Eigen::Vector2d& start,
-    const Eigen::Vector2d& goal,
-    const GlobalEsdfMap& map,
-    std::vector<Eigen::Vector2d>& optimized_path) const {
-    std::vector<Eigen::Vector2d> ref = reference_path;
-    if (ref.size() < 2) {
-        ref = {start, goal};
+    const int piece_num = std::max(2, static_cast<int>(reference_path.size()) - 1);
+    const int inner_num = piece_num - 1;
+
+    Eigen::VectorXd x0(2 * inner_num + piece_num);
+    for (int i = 0; i < inner_num; ++i) {
+        const size_t idx = std::min(reference_path.size() - 2, static_cast<size_t>(i + 1));
+        x0(2 * i) = reference_path[idx].x();
+        x0(2 * i + 1) = reference_path[idx].y();
     }
-    if ((ref.front() - start).norm() > 1e-6) ref.insert(ref.begin(), start);
-    if ((ref.back() - goal).norm() > 1e-6) ref.push_back(goal);
-
-    int piece_num = static_cast<int>(std::min<size_t>(std::max<size_t>(2, ref.size() - 1), static_cast<size_t>(std::max(2, cfg_.num_control_points - 1))));
-    if (piece_num < 2) piece_num = 2;
-
-    std::vector<Eigen::Vector2d> sampled(piece_num + 1);
-    for (int i = 0; i <= piece_num; ++i) {
-        const size_t idx = std::min(ref.size() - 1, static_cast<size_t>(i * (ref.size() - 1) / piece_num));
-        sampled[i] = ref[idx];
+    for (int i = 0; i < piece_num; ++i) {
+        const Eigen::Vector2d p0 = (i == 0) ? start : reference_path[std::min<int>(reference_path.size() - 1, i)];
+        const Eigen::Vector2d p1 = (i == piece_num - 1) ? goal : reference_path[std::min<int>(reference_path.size() - 1, i + 1)];
+        const double t = std::max(0.05, (p1 - p0).norm() / 0.7);
+        x0(2 * inner_num + i) = std::log(t);
     }
-    sampled.front() = start;
-    sampled.back() = goal;
+
+    MsLbfgsCtx ctx;
+    ctx.map = &map;
+    ctx.ref = &reference_path;
+    ctx.start = start;
+    ctx.goal = goal;
+    ctx.cfg = cfg_;
+    ctx.piece_num = piece_num;
+
+    lbfgs::lbfgs_parameter_t param;
+    param.max_iterations = cfg_.max_lbfgs_iterations;
+
+    double fx = 0.0;
+    int ret = lbfgs::lbfgs_optimize(x0, fx, evalCost, nullptr, nullptr, &ctx, param);
+    if (ret < 0) return false;
+
+    Eigen::MatrixXd inPs(2, std::max(0, inner_num));
+    Eigen::VectorXd ts(piece_num);
+    for (int i = 0; i < inner_num; ++i) {
+        inPs(0, i) = x0(2 * i);
+        inPs(1, i) = x0(2 * i + 1);
+    }
+    for (int i = 0; i < piece_num; ++i) ts(i) = std::max(0.03, std::exp(x0(2 * inner_num + i)));
 
     Eigen::Matrix<double, 2, 3> head, tail;
-    head.setZero();
-    tail.setZero();
+    head.setZero(); tail.setZero();
     head.col(0) = start;
     tail.col(0) = goal;
 
-    const double init_theta = std::atan2(sampled[1].y() - sampled[0].y(), sampled[1].x() - sampled[0].x());
-    const double end_theta = std::atan2(sampled[piece_num].y() - sampled[piece_num - 1].y(), sampled[piece_num].x() - sampled[piece_num - 1].x());
-    head.col(1) = Eigen::Vector2d(std::cos(init_theta), std::sin(init_theta)) * 0.2;
-    tail.col(1) = Eigen::Vector2d(std::cos(end_theta), std::sin(end_theta)) * 0.2;
-
-    Eigen::MatrixXd inner_points(2, piece_num - 1);
-    for (int i = 0; i < piece_num - 1; ++i) inner_points.col(i) = sampled[i + 1];
-
-    Eigen::VectorXd piece_times(piece_num);
-    for (int i = 0; i < piece_num; ++i) {
-        const double seg_len = (sampled[i + 1] - sampled[i]).norm();
-        piece_times(i) = std::max(0.05, seg_len / std::max(0.1, cfg_.w_length * 5.0));
-    }
-
     minco::MINCO_S3NU minco;
-    minco.setConditions(head, tail, piece_num);
-    minco.setParameters(inner_points, piece_times);
+    minco.setConditions(head, tail, piece_num, Eigen::Vector2d(1.0, 1.0));
+    minco.setParameters(inPs, ts);
+
     Trajectory<5, 2> traj;
     minco.getTrajectory(traj);
 
-    const double total_t = traj.getTotalDuration();
-    const int sample_n = std::max(20, piece_num * cfg_.sample_per_segment);
-
     optimized_path.clear();
-    optimized_path.reserve(sample_n);
-    for (int i = 0; i < sample_n; ++i) {
-        const double t = total_t * static_cast<double>(i) / static_cast<double>(sample_n - 1);
-        Eigen::Vector2d p = traj.getPos(t);
-
-        double dist;
-        Eigen::Vector2d grad;
-        if (map.query(p, dist, grad) && dist < cfg_.safe_distance) {
-            const double gn = grad.norm();
-            if (gn > 1e-6) p += (cfg_.safe_distance - dist) * (grad / gn) * 0.1;
+    const int sample_each = std::max(8, cfg_.sample_per_segment);
+    for (int k = 0; k < traj.getPieceNum(); ++k) {
+        const auto& piece = traj[k];
+        for (int i = (k == 0 ? 0 : 1); i <= sample_each; ++i) {
+            const double t = piece.getDuration() * static_cast<double>(i) / sample_each;
+            optimized_path.push_back(piece.getPos(t));
         }
-        optimized_path.push_back(p);
-    }
-
-    if (!optimized_path.empty()) {
-        optimized_path.front() = start;
-        optimized_path.back() = goal;
     }
     return optimized_path.size() >= 2;
 }
 
-
-bool DdrEsdfPipelinePlanner::plan(
-    const Eigen::Vector2d& start,
-    const Eigen::Vector2d& goal,
-    const GlobalEsdfMap& map,
-    std::vector<Eigen::Vector2d>& front_end_path,
-    std::vector<Eigen::Vector2d>& optimized_path) const {
+bool DdrEsdfPipelinePlanner::plan(const Eigen::Vector2d& start,
+                                  const Eigen::Vector2d& goal,
+                                  const GlobalEsdfMap& map,
+                                  std::vector<Eigen::Vector2d>& front_end_path,
+                                  std::vector<Eigen::Vector2d>& optimized_path) const {
     if (!jps_.plan(start, goal, map, front_end_path)) return false;
     return ms_.plan(front_end_path, start, goal, map, optimized_path);
 }
